@@ -1,3 +1,4 @@
+# this is an example of gitlab-page rep.
 image: alpine:latest
 
 pages:
