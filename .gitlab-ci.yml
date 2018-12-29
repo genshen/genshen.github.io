@@ -1,5 +1,6 @@
 # this is an example of gitlab-page rep.
-image: alpine:latest
+image: debian:7.11-slim 
+# test for using image not in runner
 
 pages:
   stage: deploy
