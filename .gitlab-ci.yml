@@ -3,6 +3,8 @@ image: debian:7.11-slim
 # test for using image not in runner
 
 pages:
+  tags:
+  - pages
   stage: deploy
   script:
   - echo 'Nothing to do...'
