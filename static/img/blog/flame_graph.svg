@@ -1,0 +1,2449 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="422" onload="init(evt)" viewBox="0 0 1200 422" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+	}
+
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+		}
+		else if (e.target.id == "unzoom") unzoom();
+		else if (e.target.id == "search") search_prompt();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	}, false)
+
+	// functions
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+		return;
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+	}
+
+	// search
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)", "");
+			if (term != null) {
+				search(term)
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		var re = new RegExp(term);
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="422.0" fill="url(#background)"  />
+<text id="title" x="600.00" y="24" >Flame Graph</text>
+<text id="details" x="10.00" y="405" > </text>
+<text id="unzoom" x="10.00" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090.00" y="24" >Search</text>
+<text id="matched" x="1090.00" y="405" > </text>
+<g id="frames">
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_bucket_index(long const&amp;, unsigned long, unsigned long) const (1,942 samples, 1.00%)</title><rect x="195.7" y="117" width="11.8" height="15.0" fill="rgb(241,73,0)" rx="2" ry="2" />
+<text  x="198.71" y="127.5" ></text>
+</g>
+<g >
+<title>long const&amp; std::__pair_get&lt;0ul&gt;::__get&lt;long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (199 samples, 0.10%)</title><rect x="192.0" y="101" width="1.2" height="15.0" fill="rgb(244,32,7)" rx="2" ry="2" />
+<text  x="194.98" y="111.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp; std::forward&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;(std::remove_reference&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::type&amp;) (32 samples, 0.02%)</title><rect x="793.1" y="165" width="0.2" height="15.0" fill="rgb(227,76,34)" rx="2" ry="2" />
+<text  x="796.07" y="175.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::new_allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;::max_size() const (84 samples, 0.04%)</title><rect x="301.6" y="101" width="0.5" height="15.0" fill="rgb(223,89,17)" rx="2" ry="2" />
+<text  x="304.63" y="111.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Equal_helper&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, unsigned long, false&gt;::_S_equals(std::equal_to&lt;long&gt; const&amp;, std::__detail::_Select1st const&amp;, long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (1,356 samples, 0.70%)</title><rect x="991.2" y="165" width="8.2" height="15.0" fill="rgb(251,134,52)" rx="2" ry="2" />
+<text  x="994.19" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_Node_iterator_base(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (34 samples, 0.02%)</title><rect x="988.5" y="149" width="0.2" height="15.0" fill="rgb(251,115,28)" rx="2" ry="2" />
+<text  x="991.45" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;, true&gt;::_S_get(std::__detail::_Hashtable_ebo_helper&lt;0, std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;, true&gt;&amp;) (281 samples, 0.14%)</title><rect x="295.9" y="117" width="1.7" height="15.0" fill="rgb(232,45,50)" rx="2" ry="2" />
+<text  x="298.89" y="127.5" ></text>
+</g>
+<g >
+<title>operator delete(void*)&lt;0000000000096fe0&gt; (38 samples, 0.02%)</title><rect x="519.9" y="117" width="0.2" height="15.0" fill="rgb(234,100,11)" rx="2" ry="2" />
+<text  x="522.89" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_Node_iterator_base(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (31 samples, 0.02%)</title><rect x="780.1" y="149" width="0.1" height="15.0" fill="rgb(219,184,30)" rx="2" ry="2" />
+<text  x="783.05" y="159.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (427 samples, 0.22%)</title><rect x="254.2" y="101" width="2.6" height="15.0" fill="rgb(236,108,28)" rx="2" ry="2" />
+<text  x="257.22" y="111.5" ></text>
+</g>
+<g >
+<title>atom::sendForce()&lt;0000000000466854&gt; (4,346 samples, 2.23%)</title><rect x="1163.6" y="245" width="26.3" height="15.0" fill="rgb(237,228,13)" rx="2" ry="2" />
+<text  x="1166.56" y="255.5" >a..</text>
+</g>
+<g >
+<title>std::pair&lt;long const, AtomElement*&gt;::pair&lt;long, AtomElement*, true&gt;(std::pair&lt;long, AtomElement*&gt;&amp;&amp;) (981 samples, 0.50%)</title><rect x="391.2" y="101" width="5.9" height="15.0" fill="rgb(237,170,40)" rx="2" ry="2" />
+<text  x="394.18" y="111.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::operator-&gt;() const (2,197 samples, 1.13%)</title><rect x="704.5" y="213" width="13.4" height="15.0" fill="rgb(248,25,11)" rx="2" ry="2" />
+<text  x="707.55" y="223.5" ></text>
+</g>
+<g >
+<title>std::tuple_element&lt;0ul, std::pair&lt;long const, AtomElement*&gt; &gt;::type&amp; std::get&lt;0ul, long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (174 samples, 0.09%)</title><rect x="785.9" y="133" width="1.1" height="15.0" fill="rgb(219,92,38)" rx="2" ry="2" />
+<text  x="788.92" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt; const&amp;) (113 samples, 0.06%)</title><rect x="972.6" y="133" width="0.7" height="15.0" fill="rgb(217,14,14)" rx="2" ry="2" />
+<text  x="975.57" y="143.5" ></text>
+</g>
+<g >
+<title>MPID_Probe&lt;00000000001531e0&gt; (237 samples, 0.12%)</title><rect x="116.4" y="197" width="1.4" height="15.0" fill="rgb(253,70,22)" rx="2" ry="2" />
+<text  x="119.38" y="207.5" ></text>
+</g>
+<g >
+<title>std::equal_to&lt;long&gt;::operator()(long const&amp;, long const&amp;) const (128 samples, 0.07%)</title><rect x="987.1" y="117" width="0.7" height="15.0" fill="rgb(238,191,29)" rx="2" ry="2" />
+<text  x="990.06" y="127.5" ></text>
+</g>
+<g >
+<title>pack::pack_df(AtomList&amp;, double*, InterAtomList*, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;&amp;, std::vector&lt;AtomElement*, std::allocator&lt;AtomElement*&gt; &gt;&amp;)&lt;00000000004624e1&gt; (161 samples, 0.08%)</title><rect x="1136.3" y="181" width="1.0" height="15.0" fill="rgb(252,26,7)" rx="2" ry="2" />
+<text  x="1139.34" y="191.5" ></text>
+</g>
+<g >
+<title>__memset_sse2 (149 samples, 0.08%)</title><rect x="418.2" y="181" width="0.9" height="15.0" fill="rgb(242,20,24)" rx="2" ry="2" />
+<text  x="421.22" y="191.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_unpack&lt;0000000000185c10&gt; (58 samples, 0.03%)</title><rect x="115.7" y="133" width="0.4" height="15.0" fill="rgb(228,80,10)" rx="2" ry="2" />
+<text  x="118.73" y="143.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (543 samples, 0.28%)</title><rect x="655.3" y="213" width="3.3" height="15.0" fill="rgb(218,221,33)" rx="2" ry="2" />
+<text  x="658.27" y="223.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::operator++(int) (444 samples, 0.23%)</title><rect x="1040.8" y="213" width="2.7" height="15.0" fill="rgb(213,177,19)" rx="2" ry="2" />
+<text  x="1043.76" y="223.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) const (35 samples, 0.02%)</title><rect x="986.7" y="117" width="0.2" height="15.0" fill="rgb(207,69,38)" rx="2" ry="2" />
+<text  x="989.72" y="127.5" ></text>
+</g>
+<g >
+<title>MPIDU_Sched_are_pending&lt;000000000018bb80&gt; (221 samples, 0.11%)</title><rect x="1173.6" y="149" width="1.3" height="15.0" fill="rgb(225,147,32)" rx="2" ry="2" />
+<text  x="1176.56" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt; const&amp;) (23 samples, 0.01%)</title><rect x="791.5" y="149" width="0.1" height="15.0" fill="rgb(242,91,15)" rx="2" ry="2" />
+<text  x="794.46" y="159.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long, AtomElement*&gt;::pair&lt;AtomElement*, true&gt;(long const&amp;, AtomElement*&amp;&amp;) (889 samples, 0.46%)</title><rect x="412.8" y="197" width="5.4" height="15.0" fill="rgb(247,64,21)" rx="2" ry="2" />
+<text  x="415.82" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_emplace&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::integral_constant&lt;bool, false&gt;, std::pair&lt;long, AtomElement*&gt;&amp;&amp;) (41,445 samples, 21.31%)</title><rect x="155.8" y="181" width="251.5" height="15.0" fill="rgb(205,19,19)" rx="2" ry="2" />
+<text  x="158.79" y="191.5" >std::__detail::_Node_iterator&lt;std..</text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (17 samples, 0.01%)</title><rect x="778.5" y="85" width="0.1" height="15.0" fill="rgb(225,195,11)" rx="2" ry="2" />
+<text  x="781.50" y="95.5" ></text>
+</g>
+<g >
+<title>DfEmbedPacker::onSend(double*, unsigned long, int, int)&lt;00000000004696b0&gt; (161 samples, 0.08%)</title><rect x="1136.3" y="197" width="1.0" height="15.0" fill="rgb(229,222,49)" rx="2" ry="2" />
+<text  x="1139.34" y="207.5" ></text>
+</g>
+<g >
+<title>int const&amp; std::max&lt;int&gt;(int const&amp;, int const&amp;) (50 samples, 0.03%)</title><rect x="680.8" y="197" width="0.3" height="15.0" fill="rgb(244,186,16)" rx="2" ry="2" />
+<text  x="683.76" y="207.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;unsigned short, OneWayEam&gt;::index(unsigned short) (274 samples, 0.14%)</title><rect x="1064.7" y="165" width="1.7" height="15.0" fill="rgb(213,81,31)" rx="2" ry="2" />
+<text  x="1067.71" y="175.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;std::__decay_and_strip&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::__type, std::__decay_and_strip&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::__type&gt; std::make_pair&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;(std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp;) (159 samples, 0.08%)</title><rect x="1001.5" y="181" width="0.9" height="15.0" fill="rgb(214,0,31)" rx="2" ry="2" />
+<text  x="1004.45" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_M_next() const (8,939 samples, 4.60%)</title><rect x="421.2" y="165" width="54.3" height="15.0" fill="rgb(240,148,29)" rx="2" ry="2" />
+<text  x="424.25" y="175.5" >std::..</text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (731 samples, 0.38%)</title><rect x="922.3" y="181" width="4.4" height="15.0" fill="rgb(239,181,32)" rx="2" ry="2" />
+<text  x="925.26" y="191.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (53 samples, 0.03%)</title><rect x="1002.9" y="213" width="0.3" height="15.0" fill="rgb(244,226,53)" rx="2" ry="2" />
+<text  x="1005.89" y="223.5" ></text>
+</g>
+<g >
+<title>atom::clearForce()&lt;0000000000463816&gt; (55 samples, 0.03%)</title><rect x="118.8" y="245" width="0.4" height="15.0" fill="rgb(231,134,52)" rx="2" ry="2" />
+<text  x="121.83" y="255.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;unsigned short, OneWayEam&gt;::index(unsigned short) (388 samples, 0.20%)</title><rect x="1127.3" y="165" width="2.4" height="15.0" fill="rgb(211,35,37)" rx="2" ry="2" />
+<text  x="1130.34" y="175.5" ></text>
+</g>
+<g >
+<title>_init&lt;000000000003c0b8&gt; (130 samples, 0.07%)</title><rect x="1185.3" y="149" width="0.8" height="15.0" fill="rgb(234,46,31)" rx="2" ry="2" />
+<text  x="1188.28" y="159.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_bucket_index(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) const (8,735 samples, 4.49%)</title><rect x="931.1" y="181" width="53.0" height="15.0" fill="rgb(206,124,36)" rx="2" ry="2" />
+<text  x="934.06" y="191.5" >std::..</text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::operator++(int) (33 samples, 0.02%)</title><rect x="658.6" y="213" width="0.2" height="15.0" fill="rgb(214,167,21)" rx="2" ry="2" />
+<text  x="661.64" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::operator++() (800 samples, 0.41%)</title><rect x="699.7" y="213" width="4.8" height="15.0" fill="rgb(224,206,0)" rx="2" ry="2" />
+<text  x="702.69" y="223.5" ></text>
+</g>
+<g >
+<title>MPID_nem_tcp_connpoll&lt;0000000000176540&gt; (1,019 samples, 0.52%)</title><rect x="1179.1" y="149" width="6.2" height="15.0" fill="rgb(253,184,13)" rx="2" ry="2" />
+<text  x="1182.10" y="159.5" ></text>
+</g>
+<g >
+<title>std::_List_node&lt;AtomElement&gt;::_M_valptr() (922 samples, 0.47%)</title><rect x="907.3" y="197" width="5.6" height="15.0" fill="rgb(243,175,3)" rx="2" ry="2" />
+<text  x="910.34" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_alloc&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::_M_deallocate_node(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (8,086 samples, 4.16%)</title><rect x="475.5" y="165" width="49.0" height="15.0" fill="rgb(228,163,30)" rx="2" ry="2" />
+<text  x="478.48" y="175.5" >std:..</text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const&lt;00000000004086ee&gt; (848 samples, 0.44%)</title><rect x="770.0" y="149" width="5.1" height="15.0" fill="rgb(219,54,1)" rx="2" ry="2" />
+<text  x="773.00" y="159.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_pack&lt;0000000000185bb0&gt; (38 samples, 0.02%)</title><rect x="116.1" y="133" width="0.2" height="15.0" fill="rgb(245,80,7)" rx="2" ry="2" />
+<text  x="119.08" y="143.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (68 samples, 0.03%)</title><rect x="996.7" y="101" width="0.4" height="15.0" fill="rgb(241,13,15)" rx="2" ry="2" />
+<text  x="999.66" y="111.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (429 samples, 0.22%)</title><rect x="715.3" y="165" width="2.6" height="15.0" fill="rgb(212,45,50)" rx="2" ry="2" />
+<text  x="718.28" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_bucket_index(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; const*, unsigned long) const (21 samples, 0.01%)</title><rect x="245.9" y="101" width="0.1" height="15.0" fill="rgb(234,18,3)" rx="2" ry="2" />
+<text  x="248.92" y="111.5" ></text>
+</g>
+<g >
+<title>MPIDI_CH3I_Progress&lt;0000000000160d30&gt; (80 samples, 0.04%)</title><rect x="11.6" y="181" width="0.5" height="15.0" fill="rgb(216,178,49)" rx="2" ry="2" />
+<text  x="14.57" y="191.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;unsigned short, OneWayEam&gt;::index(unsigned short) (507 samples, 0.26%)</title><rect x="896.8" y="165" width="3.0" height="15.0" fill="rgb(224,83,16)" rx="2" ry="2" />
+<text  x="899.77" y="175.5" ></text>
+</g>
+<g >
+<title>RhoPacker::onReceive(double*, unsigned long, int, int)&lt;0000000000469a86&gt; (46 samples, 0.02%)</title><rect x="1162.4" y="197" width="0.3" height="15.0" fill="rgb(250,25,19)" rx="2" ry="2" />
+<text  x="1165.39" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_Node_iterator_base(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (25 samples, 0.01%)</title><rect x="792.6" y="165" width="0.1" height="15.0" fill="rgb(217,30,53)" rx="2" ry="2" />
+<text  x="795.59" y="175.5" ></text>
+</g>
+<g >
+<title>eam::embedEnergyContribution(unsigned short, double)&lt;00000000004a1e9a&gt; (38 samples, 0.02%)</title><rect x="1003.2" y="213" width="0.3" height="15.0" fill="rgb(226,209,46)" rx="2" ry="2" />
+<text  x="1006.23" y="223.5" ></text>
+</g>
+<g >
+<title>poll_active_fboxes&lt;000000000015df30&gt; (636 samples, 0.33%)</title><rect x="1186.1" y="149" width="3.8" height="15.0" fill="rgb(228,78,22)" rx="2" ry="2" />
+<text  x="1189.07" y="159.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) const (1,088 samples, 0.56%)</title><rect x="168.7" y="149" width="6.6" height="15.0" fill="rgb(232,170,1)" rx="2" ry="2" />
+<text  x="171.67" y="159.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_membuf&lt;AtomElement&gt;::_M_addr() (290 samples, 0.15%)</title><rect x="135.8" y="165" width="1.8" height="15.0" fill="rgb(233,61,14)" rx="2" ry="2" />
+<text  x="138.83" y="175.5" ></text>
+</g>
+<g >
+<title>std::hash&lt;long&gt;::operator()(long) const (107 samples, 0.06%)</title><rect x="983.4" y="149" width="0.7" height="15.0" fill="rgb(208,102,1)" rx="2" ry="2" />
+<text  x="986.42" y="159.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_rehash_aux(unsigned long, std::integral_constant&lt;bool, false&gt;) (520 samples, 0.27%)</title><rect x="246.0" y="117" width="3.2" height="15.0" fill="rgb(234,86,15)" rx="2" ry="2" />
+<text  x="249.04" y="127.5" ></text>
+</g>
+<g >
+<title>__GI___libc_free (2,163 samples, 1.11%)</title><rect x="488.1" y="117" width="13.1" height="15.0" fill="rgb(210,137,6)" rx="2" ry="2" />
+<text  x="491.09" y="127.5" ></text>
+</g>
+<g >
+<title>_int_malloc&lt;00000000000820e0&gt; (12,378 samples, 6.36%)</title><rect x="308.0" y="69" width="75.1" height="15.0" fill="rgb(208,19,49)" rx="2" ry="2" />
+<text  x="310.95" y="79.5" >_int_mal..</text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::operator*() const (3,487 samples, 1.79%)</title><rect x="85.5" y="181" width="21.2" height="15.0" fill="rgb(219,73,52)" rx="2" ry="2" />
+<text  x="88.52" y="191.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;(std::pair&lt;long const, AtomElement*&gt; const&amp;) const (516 samples, 0.27%)</title><rect x="760.2" y="149" width="3.1" height="15.0" fill="rgb(224,110,35)" rx="2" ry="2" />
+<text  x="763.20" y="159.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (29 samples, 0.01%)</title><rect x="1163.7" y="165" width="0.2" height="15.0" fill="rgb(207,29,50)" rx="2" ry="2" />
+<text  x="1166.75" y="175.5" ></text>
+</g>
+<g >
+<title>DfEmbedPacker::onReceive(double*, unsigned long, int, int)&lt;000000000046973a&gt; (46 samples, 0.02%)</title><rect x="1136.1" y="197" width="0.2" height="15.0" fill="rgb(247,152,15)" rx="2" ry="2" />
+<text  x="1139.06" y="207.5" ></text>
+</g>
+<g >
+<title>MPID_Irecv&lt;00000000001514e0&gt; (24 samples, 0.01%)</title><rect x="11.3" y="197" width="0.1" height="15.0" fill="rgb(233,149,54)" rx="2" ry="2" />
+<text  x="14.29" y="207.5" ></text>
+</g>
+<g >
+<title>atom_type::getTypeIdByType(atom_type::atom_type)&lt;0000000000466a2f&gt; (169 samples, 0.09%)</title><rect x="1109.7" y="213" width="1.1" height="15.0" fill="rgb(228,14,50)" rx="2" ry="2" />
+<text  x="1112.75" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt; const&amp;) (31 samples, 0.02%)</title><rect x="1000.2" y="149" width="0.2" height="15.0" fill="rgb(236,9,46)" rx="2" ry="2" />
+<text  x="1003.19" y="159.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::new_allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;::deallocate(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*, unsigned long) (5,605 samples, 2.88%)</title><rect x="486.1" y="133" width="34.0" height="15.0" fill="rgb(243,50,6)" rx="2" ry="2" />
+<text  x="489.11" y="143.5" >__..</text>
+</g>
+<g >
+<title>std::equal_to&lt;long&gt;::operator()(long const&amp;, long const&amp;) const (339 samples, 0.17%)</title><rect x="788.6" y="149" width="2.1" height="15.0" fill="rgb(220,145,12)" rx="2" ry="2" />
+<text  x="791.65" y="159.5" ></text>
+</g>
+<g >
+<title>std::tuple_element&lt;0ul, std::pair&lt;long const, AtomElement*&gt; &gt;::type&amp; std::get&lt;0ul, long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (508 samples, 0.26%)</title><rect x="172.2" y="133" width="3.1" height="15.0" fill="rgb(238,103,43)" rx="2" ry="2" />
+<text  x="175.19" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() (29 samples, 0.01%)</title><rect x="778.4" y="117" width="0.2" height="15.0" fill="rgb(254,46,38)" rx="2" ry="2" />
+<text  x="781.43" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::equal_to&lt;long&gt;, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;0, std::equal_to&lt;long&gt;, true&gt; const&amp;) (47 samples, 0.02%)</title><rect x="1001.0" y="149" width="0.2" height="15.0" fill="rgb(228,140,10)" rx="2" ry="2" />
+<text  x="1003.96" y="159.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_membuf&lt;AtomElement&gt;::_M_ptr() (542 samples, 0.28%)</title><rect x="909.6" y="181" width="3.3" height="15.0" fill="rgb(251,112,51)" rx="2" ry="2" />
+<text  x="912.65" y="191.5" ></text>
+</g>
+<g >
+<title>std::equal_to&lt;long&gt;::operator()(long const&amp;, long const&amp;) const (140 samples, 0.07%)</title><rect x="778.6" y="117" width="0.9" height="15.0" fill="rgb(235,53,35)" rx="2" ry="2" />
+<text  x="781.60" y="127.5" ></text>
+</g>
+<g >
+<title>double const&amp; std::min&lt;double&gt;(double const&amp;, double const&amp;) (113 samples, 0.06%)</title><rect x="1067.9" y="197" width="0.7" height="15.0" fill="rgb(241,22,45)" rx="2" ry="2" />
+<text  x="1070.95" y="207.5" ></text>
+</g>
+<g >
+<title>__libc_start_main&lt;00000000000222e0&gt; (194,480 samples, 100.00%)</title><rect x="10.0" y="341" width="1180.0" height="15.0" fill="rgb(205,106,35)" rx="2" ry="2" />
+<text  x="13.00" y="351.5" >__libc_start_main&lt;00000000000222e0&gt;</text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::__normal_iterator(long* const&amp;) (179 samples, 0.09%)</title><rect x="1135.0" y="197" width="1.1" height="15.0" fill="rgb(245,19,16)" rx="2" ry="2" />
+<text  x="1137.97" y="207.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::__normal_iterator(long* const&amp;) (29 samples, 0.01%)</title><rect x="1002.5" y="197" width="0.2" height="15.0" fill="rgb(222,150,49)" rx="2" ry="2" />
+<text  x="1005.55" y="207.5" ></text>
+</g>
+<g >
+<title>void __gnu_cxx::new_allocator&lt;AtomElement*&gt;::construct&lt;AtomElement*, AtomElement*&gt;(AtomElement**, AtomElement*&amp;&amp;) (22 samples, 0.01%)</title><rect x="114.4" y="133" width="0.1" height="15.0" fill="rgb(205,200,7)" rx="2" ry="2" />
+<text  x="117.38" y="143.5" ></text>
+</g>
+<g >
+<title>int const&amp; std::max&lt;int&gt;(int const&amp;, int const&amp;) (122 samples, 0.06%)</title><rect x="1132.3" y="197" width="0.8" height="15.0" fill="rgb(241,50,16)" rx="2" ry="2" />
+<text  x="1135.34" y="207.5" ></text>
+</g>
+<g >
+<title>KeyDb::operator==(KeyDb const&amp;) const&lt;00000000004a5406&gt; (152 samples, 0.08%)</title><rect x="674.1" y="149" width="0.9" height="15.0" fill="rgb(246,163,46)" rx="2" ry="2" />
+<text  x="677.11" y="159.5" ></text>
+</g>
+<g >
+<title>void comm::neiSendReceive&lt;double&gt;(Packer&lt;double&gt;*, comm::mpi_process, int, int const (&amp;) [3][2]) (4,346 samples, 2.23%)</title><rect x="1163.6" y="213" width="26.3" height="15.0" fill="rgb(251,154,30)" rx="2" ry="2" />
+<text  x="1166.56" y="223.5" >v..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_store_code(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*, unsigned long) const (114 samples, 0.06%)</title><rect x="250.4" y="133" width="0.7" height="15.0" fill="rgb(243,18,3)" rx="2" ry="2" />
+<text  x="253.43" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::_Node_iterator(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (66 samples, 0.03%)</title><rect x="988.3" y="165" width="0.4" height="15.0" fill="rgb(235,79,36)" rx="2" ry="2" />
+<text  x="991.26" y="175.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::pair&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, true&gt;(std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp;) (108 samples, 0.06%)</title><rect x="793.3" y="165" width="0.6" height="15.0" fill="rgb(220,139,22)" rx="2" ry="2" />
+<text  x="796.27" y="175.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_find_before_node(unsigned long, long const&amp;, unsigned long) const (598 samples, 0.31%)</title><rect x="776.0" y="165" width="3.6" height="15.0" fill="rgb(222,113,0)" rx="2" ry="2" />
+<text  x="778.99" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_equals(long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) const (4,105 samples, 2.11%)</title><rect x="221.0" y="117" width="24.9" height="15.0" fill="rgb(246,10,54)" rx="2" ry="2" />
+<text  x="224.01" y="127.5" >s..</text>
+</g>
+<g >
+<title>NewtonMotion::secondstep(AtomList*, InterAtomList*)&lt;0000000000468f18&gt; (31 samples, 0.02%)</title><rect x="118.6" y="245" width="0.2" height="15.0" fill="rgb(224,191,26)" rx="2" ry="2" />
+<text  x="121.64" y="255.5" ></text>
+</g>
+<g >
+<title>atom::decide()&lt;00000000004632fc&gt; (103 samples, 0.05%)</title><rect x="1162.9" y="245" width="0.7" height="15.0" fill="rgb(213,19,43)" rx="2" ry="2" />
+<text  x="1165.94" y="255.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_M_next() const (357 samples, 0.18%)</title><rect x="247.0" y="101" width="2.2" height="15.0" fill="rgb(252,199,47)" rx="2" ry="2" />
+<text  x="250.03" y="111.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() const (264 samples, 0.14%)</title><rect x="976.9" y="117" width="1.6" height="15.0" fill="rgb(224,24,14)" rx="2" ry="2" />
+<text  x="979.86" y="127.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (3,722 samples, 1.91%)</title><rect x="1083.9" y="213" width="22.6" height="15.0" fill="rgb(220,175,51)" rx="2" ry="2" />
+<text  x="1086.89" y="223.5" >A..</text>
+</g>
+<g >
+<title>atom::latDf(eam*, comm::Domain*, double&amp;)&lt;0000000000464a8a&gt; (114 samples, 0.06%)</title><rect x="1002.8" y="229" width="0.7" height="15.0" fill="rgb(218,139,18)" rx="2" ry="2" />
+<text  x="1005.76" y="239.5" ></text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::operator!=(std::_List_iterator&lt;AtomElement&gt; const&amp;) const (1,051 samples, 0.54%)</title><rect x="79.1" y="181" width="6.4" height="15.0" fill="rgb(254,79,14)" rx="2" ry="2" />
+<text  x="82.14" y="191.5" ></text>
+</g>
+<g >
+<title>PMPI_Probe (4,112 samples, 2.11%)</title><rect x="1137.4" y="197" width="25.0" height="15.0" fill="rgb(231,64,3)" rx="2" ry="2" />
+<text  x="1140.44" y="207.5" >P..</text>
+</g>
+<g >
+<title>EamPhiList::getPhiByEamPhiByType(unsigned short, unsigned short)&lt;00000000004a536a&gt; (895 samples, 0.46%)</title><rect x="1058.0" y="197" width="5.4" height="15.0" fill="rgb(219,31,27)" rx="2" ry="2" />
+<text  x="1060.99" y="207.5" ></text>
+</g>
+<g >
+<title>std::_List_node&lt;AtomElement&gt;::_M_valptr() (2,511 samples, 1.29%)</title><rect x="91.4" y="165" width="15.3" height="15.0" fill="rgb(206,206,20)" rx="2" ry="2" />
+<text  x="94.44" y="175.5" ></text>
+</g>
+<g >
+<title>MPIDI_CH3I_Progress&lt;0000000000160d30&gt; (237 samples, 0.12%)</title><rect x="116.4" y="181" width="1.4" height="15.0" fill="rgb(237,166,13)" rx="2" ry="2" />
+<text  x="119.38" y="191.5" ></text>
+</g>
+<g >
+<title>InterAtomList::test(unsigned long, std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;)&lt;0000000000453eec&gt; (36 samples, 0.02%)</title><rect x="118.2" y="245" width="0.2" height="15.0" fill="rgb(254,100,52)" rx="2" ry="2" />
+<text  x="121.20" y="255.5" ></text>
+</g>
+<g >
+<title>long const&amp; std::__pair_get&lt;0ul&gt;::__const_get&lt;long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt; const&amp;) (115 samples, 0.06%)</title><rect x="970.9" y="117" width="0.7" height="15.0" fill="rgb(217,195,16)" rx="2" ry="2" />
+<text  x="973.91" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const&lt;00000000004086ee&gt; (1,393 samples, 0.72%)</title><rect x="199.0" y="101" width="8.5" height="15.0" fill="rgb(241,149,29)" rx="2" ry="2" />
+<text  x="202.04" y="111.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) const (23 samples, 0.01%)</title><rect x="778.3" y="117" width="0.1" height="15.0" fill="rgb(212,81,32)" rx="2" ry="2" />
+<text  x="781.29" y="127.5" ></text>
+</g>
+<g >
+<title>__GI___libc_malloc (191 samples, 0.10%)</title><rect x="13.4" y="85" width="1.2" height="15.0" fill="rgb(239,34,43)" rx="2" ry="2" />
+<text  x="16.43" y="95.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long, AtomElement*&gt;&amp;&amp; std::forward&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::remove_reference&lt;std::pair&lt;long, AtomElement*&gt; &gt;::type&amp;) (96 samples, 0.05%)</title><rect x="407.8" y="197" width="0.6" height="15.0" fill="rgb(205,150,11)" rx="2" ry="2" />
+<text  x="410.84" y="207.5" ></text>
+</g>
+<g >
+<title>std::hash&lt;long&gt;::operator()(long) const (98 samples, 0.05%)</title><rect x="775.1" y="149" width="0.6" height="15.0" fill="rgb(254,13,36)" rx="2" ry="2" />
+<text  x="778.15" y="159.5" ></text>
+</g>
+<g >
+<title>KeyDb::KeyDb(unsigned short, unsigned short)&lt;00000000004a53b4&gt; (180 samples, 0.09%)</title><rect x="675.0" y="181" width="1.1" height="15.0" fill="rgb(205,226,28)" rx="2" ry="2" />
+<text  x="678.03" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_M_next() const (232 samples, 0.12%)</title><rect x="989.1" y="181" width="1.4" height="15.0" fill="rgb(217,11,24)" rx="2" ry="2" />
+<text  x="992.14" y="191.5" ></text>
+</g>
+<g >
+<title>AtomList::IndexOf3DIndex(long, long, long) const&lt;0000000000457282&gt; (547 samples, 0.28%)</title><rect x="124.8" y="213" width="3.3" height="15.0" fill="rgb(208,16,53)" rx="2" ry="2" />
+<text  x="127.83" y="223.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (217 samples, 0.11%)</title><rect x="479.6" y="133" width="1.3" height="15.0" fill="rgb(242,159,24)" rx="2" ry="2" />
+<text  x="482.57" y="143.5" ></text>
+</g>
+<g >
+<title>eam::toForce(unsigned short, unsigned short, double, double)&lt;00000000004a18c8&gt; (3,770 samples, 1.94%)</title><rect x="1046.5" y="213" width="22.9" height="15.0" fill="rgb(254,47,51)" rx="2" ry="2" />
+<text  x="1049.48" y="223.5" >e..</text>
+</g>
+<g >
+<title>std::__cxx11::list&lt;AtomElement, std::allocator&lt;AtomElement&gt; &gt;::end() (345 samples, 0.18%)</title><rect x="149.4" y="213" width="2.1" height="15.0" fill="rgb(209,36,2)" rx="2" ry="2" />
+<text  x="152.42" y="223.5" ></text>
+</g>
+<g >
+<title>crystalMD::onStart()&lt;0000000000408384&gt; (194,478 samples, 100.00%)</title><rect x="10.0" y="277" width="1180.0" height="15.0" fill="rgb(216,104,44)" rx="2" ry="2" />
+<text  x="13.01" y="287.5" >crystalMD::onStart()&lt;0000000000408384&gt;</text>
+</g>
+<g >
+<title>std::pair&lt;long const, AtomElement*&gt; const&amp; std::forward&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;(std::remove_reference&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;::type&amp;) (152 samples, 0.08%)</title><rect x="969.1" y="133" width="0.9" height="15.0" fill="rgb(242,147,18)" rx="2" ry="2" />
+<text  x="972.10" y="143.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (26 samples, 0.01%)</title><rect x="1137.2" y="165" width="0.1" height="15.0" fill="rgb(211,16,48)" rx="2" ry="2" />
+<text  x="1140.15" y="175.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_find_node(unsigned long, long const&amp;, unsigned long) const (638 samples, 0.33%)</title><rect x="775.7" y="181" width="3.9" height="15.0" fill="rgb(253,209,27)" rx="2" ry="2" />
+<text  x="778.74" y="191.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() const (124 samples, 0.06%)</title><rect x="769.3" y="101" width="0.7" height="15.0" fill="rgb(220,43,10)" rx="2" ry="2" />
+<text  x="772.25" y="111.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_index_m2m&lt;0000000000184fd0&gt; (19 samples, 0.01%)</title><rect x="116.2" y="101" width="0.1" height="15.0" fill="rgb(254,25,23)" rx="2" ry="2" />
+<text  x="119.19" y="111.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::operator++(int) (434 samples, 0.22%)</title><rect x="1107.1" y="213" width="2.6" height="15.0" fill="rgb(245,208,31)" rx="2" ry="2" />
+<text  x="1110.11" y="223.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) const (448 samples, 0.23%)</title><rect x="784.3" y="149" width="2.7" height="15.0" fill="rgb(216,190,44)" rx="2" ry="2" />
+<text  x="787.26" y="159.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;unsigned short, OneWayEam&gt;::get(unsigned short) (401 samples, 0.21%)</title><rect x="676.5" y="181" width="2.4" height="15.0" fill="rgb(223,64,48)" rx="2" ry="2" />
+<text  x="679.49" y="191.5" ></text>
+</g>
+<g >
+<title>lmt_shm_recv_progress&lt;000000000016c4a0&gt; (61 samples, 0.03%)</title><rect x="115.7" y="149" width="0.4" height="15.0" fill="rgb(212,69,25)" rx="2" ry="2" />
+<text  x="118.71" y="159.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_membuf&lt;AtomElement&gt;::_M_ptr() (1,780 samples, 0.92%)</title><rect x="95.9" y="149" width="10.8" height="15.0" fill="rgb(235,196,52)" rx="2" ry="2" />
+<text  x="98.88" y="159.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_pack&lt;0000000000185bb0&gt; (34 samples, 0.02%)</title><rect x="115.2" y="149" width="0.2" height="15.0" fill="rgb(243,96,30)" rx="2" ry="2" />
+<text  x="118.19" y="159.5" ></text>
+</g>
+<g >
+<title>AtomElement*&amp;&amp; std::forward&lt;AtomElement*&gt;(std::remove_reference&lt;AtomElement*&gt;::type&amp;) (112 samples, 0.06%)</title><rect x="395.5" y="85" width="0.7" height="15.0" fill="rgb(205,17,30)" rx="2" ry="2" />
+<text  x="398.48" y="95.5" ></text>
+</g>
+<g >
+<title>std::tuple_element&lt;0ul, std::pair&lt;long const, AtomElement*&gt; &gt;::type&amp; std::get&lt;0ul, long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (524 samples, 0.27%)</title><rect x="228.6" y="69" width="3.1" height="15.0" fill="rgb(212,225,43)" rx="2" ry="2" />
+<text  x="231.56" y="79.5" ></text>
+</g>
+<g >
+<title>EamPhiList::getPhiByEamPhiByType(unsigned short, unsigned short)&lt;00000000004a536a&gt; (840 samples, 0.43%)</title><rect x="671.0" y="197" width="5.1" height="15.0" fill="rgb(231,68,14)" rx="2" ry="2" />
+<text  x="674.03" y="207.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (284 samples, 0.15%)</title><rect x="925.0" y="165" width="1.7" height="15.0" fill="rgb(205,65,39)" rx="2" ry="2" />
+<text  x="927.97" y="175.5" ></text>
+</g>
+<g >
+<title>double const&amp; std::min&lt;double&gt;(double const&amp;, double const&amp;) (179 samples, 0.09%)</title><rect x="902.0" y="197" width="1.1" height="15.0" fill="rgb(205,175,47)" rx="2" ry="2" />
+<text  x="904.98" y="207.5" ></text>
+</g>
+<g >
+<title>ws::getNearLatCoord(AtomElement const&amp;, comm::Domain const*, long*)&lt;000000000045de0c&gt; (6,442 samples, 3.31%)</title><rect x="524.5" y="213" width="39.1" height="15.0" fill="rgb(236,139,2)" rx="2" ry="2" />
+<text  x="527.55" y="223.5" >ws:..</text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_bucket_index(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) const (8,805 samples, 4.53%)</title><rect x="722.3" y="181" width="53.4" height="15.0" fill="rgb(228,202,43)" rx="2" ry="2" />
+<text  x="725.32" y="191.5" >std::..</text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;1, std::hash&lt;long&gt;, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;1, std::hash&lt;long&gt;, true&gt; const&amp;) (88 samples, 0.05%)</title><rect x="765.3" y="133" width="0.5" height="15.0" fill="rgb(226,92,38)" rx="2" ry="2" />
+<text  x="768.25" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_M_next() const (570 samples, 0.29%)</title><rect x="701.1" y="181" width="3.4" height="15.0" fill="rgb(246,95,54)" rx="2" ry="2" />
+<text  x="704.09" y="191.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (337 samples, 0.17%)</title><rect x="234.0" y="53" width="2.0" height="15.0" fill="rgb(205,200,30)" rx="2" ry="2" />
+<text  x="236.96" y="63.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::_Node_iterator(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (34 samples, 0.02%)</title><rect x="1001.2" y="181" width="0.3" height="15.0" fill="rgb(242,206,49)" rx="2" ry="2" />
+<text  x="1004.25" y="191.5" ></text>
+</g>
+<g >
+<title>MPIDI_CH3I_Progress&lt;0000000000160d30&gt; (4,240 samples, 2.18%)</title><rect x="1164.2" y="165" width="25.7" height="15.0" fill="rgb(251,9,29)" rx="2" ry="2" />
+<text  x="1167.20" y="175.5" >M..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_M_next() const (375 samples, 0.19%)</title><rect x="914.4" y="181" width="2.3" height="15.0" fill="rgb(243,71,45)" rx="2" ry="2" />
+<text  x="917.38" y="191.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_bucket_index(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) const (21 samples, 0.01%)</title><rect x="245.9" y="117" width="0.1" height="15.0" fill="rgb(238,209,38)" rx="2" ry="2" />
+<text  x="248.92" y="127.5" ></text>
+</g>
+<g >
+<title>AtomElement*&amp;&amp; std::forward&lt;AtomElement*&gt;(std::remove_reference&lt;AtomElement*&gt;::type&amp;) (115 samples, 0.06%)</title><rect x="417.5" y="181" width="0.7" height="15.0" fill="rgb(230,77,0)" rx="2" ry="2" />
+<text  x="420.52" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const&lt;00000000004086ee&gt; (174 samples, 0.09%)</title><rect x="721.3" y="149" width="1.0" height="15.0" fill="rgb(232,193,22)" rx="2" ry="2" />
+<text  x="724.26" y="159.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::__normal_iterator(long* const&amp;) (180 samples, 0.09%)</title><rect x="1070.5" y="197" width="1.1" height="15.0" fill="rgb(252,12,13)" rx="2" ry="2" />
+<text  x="1073.53" y="207.5" ></text>
+</g>
+<g >
+<title>_init&lt;000000000008e868&gt; (44 samples, 0.02%)</title><rect x="501.2" y="117" width="0.3" height="15.0" fill="rgb(218,172,12)" rx="2" ry="2" />
+<text  x="504.21" y="127.5" ></text>
+</g>
+<g >
+<title>__lround (1,410 samples, 0.73%)</title><rect x="554.8" y="197" width="8.6" height="15.0" fill="rgb(224,67,22)" rx="2" ry="2" />
+<text  x="557.84" y="207.5" ></text>
+</g>
+<g >
+<title>atom::latForce(eam*, comm::Domain*, double&amp;)&lt;0000000000464c10&gt; (60 samples, 0.03%)</title><rect x="10.0" y="229" width="0.4" height="15.0" fill="rgb(227,11,54)" rx="2" ry="2" />
+<text  x="13.04" y="239.5" ></text>
+</g>
+<g >
+<title>eam::toForce(unsigned short, unsigned short, double, double)&lt;00000000004a18c8&gt; (19 samples, 0.01%)</title><rect x="10.3" y="213" width="0.1" height="15.0" fill="rgb(246,13,51)" rx="2" ry="2" />
+<text  x="13.27" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;* std::__to_address&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (129 samples, 0.07%)</title><rect x="287.9" y="133" width="0.7" height="15.0" fill="rgb(205,123,14)" rx="2" ry="2" />
+<text  x="290.87" y="143.5" ></text>
+</g>
+<g >
+<title>atom::computeEam(eam*, comm::Domain*, double&amp;)&lt;0000000000463926&gt; (118 samples, 0.06%)</title><rect x="10.0" y="245" width="0.7" height="15.0" fill="rgb(207,222,34)" rx="2" ry="2" />
+<text  x="13.03" y="255.5" ></text>
+</g>
+<g >
+<title>bool __gnu_cxx::operator!=&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;(__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt; const&amp;, __gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt; const&amp;) (38 samples, 0.02%)</title><rect x="659.8" y="213" width="0.2" height="15.0" fill="rgb(209,33,17)" rx="2" ry="2" />
+<text  x="662.75" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() (289 samples, 0.15%)</title><rect x="995.3" y="149" width="1.8" height="15.0" fill="rgb(226,68,37)" rx="2" ry="2" />
+<text  x="998.32" y="159.5" ></text>
+</g>
+<g >
+<title>double const&amp; std::min&lt;double&gt;(double const&amp;, double const&amp;) (98 samples, 0.05%)</title><rect x="680.2" y="197" width="0.6" height="15.0" fill="rgb(245,138,5)" rx="2" ry="2" />
+<text  x="683.16" y="207.5" ></text>
+</g>
+<g >
+<title>int const&amp; std::max&lt;int&gt;(int const&amp;, int const&amp;) (90 samples, 0.05%)</title><rect x="903.1" y="197" width="0.5" height="15.0" fill="rgb(245,220,37)" rx="2" ry="2" />
+<text  x="906.06" y="207.5" ></text>
+</g>
+<g >
+<title>ws::findNearLatIndexInSubBox(AtomList*, AtomElement const&amp;, comm::Domain const*)&lt;000000000045dcbd&gt; (17 samples, 0.01%)</title><rect x="1163.4" y="213" width="0.1" height="15.0" fill="rgb(219,57,21)" rx="2" ry="2" />
+<text  x="1166.44" y="223.5" ></text>
+</g>
+<g >
+<title>void comm::neiSendReceive&lt;LatParticleData&gt;(Packer&lt;LatParticleData&gt;*, comm::mpi_process, int, int const (&amp;) [3][2]) (215 samples, 0.11%)</title><rect x="10.8" y="229" width="1.3" height="15.0" fill="rgb(212,152,54)" rx="2" ry="2" />
+<text  x="13.75" y="239.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_M_incr() (510 samples, 0.26%)</title><rect x="913.6" y="197" width="3.1" height="15.0" fill="rgb(253,88,24)" rx="2" ry="2" />
+<text  x="916.56" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; std::unordered_multimap&lt;long, AtomElement*, std::hash&lt;long&gt;, std::equal_to&lt;long&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt; &gt;::insert&lt;std::pair&lt;long, AtomElement*&gt;, void&gt;(std::pair&lt;long, AtomElement*&gt;&amp;&amp;) (42,343 samples, 21.77%)</title><rect x="151.5" y="213" width="256.9" height="15.0" fill="rgb(248,183,28)" rx="2" ry="2" />
+<text  x="154.51" y="223.5" >std::__detail::_Node_iterator&lt;std:..</text>
+</g>
+<g >
+<title>MPID_Segment_manipulate&lt;000000000017d5f0&gt; (34 samples, 0.02%)</title><rect x="115.2" y="133" width="0.2" height="15.0" fill="rgb(214,34,2)" rx="2" ry="2" />
+<text  x="118.19" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_equals(long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) const (249 samples, 0.13%)</title><rect x="778.1" y="149" width="1.5" height="15.0" fill="rgb(228,117,36)" rx="2" ry="2" />
+<text  x="781.10" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const&lt;00000000004086ee&gt; (817 samples, 0.42%)</title><rect x="978.5" y="149" width="4.9" height="15.0" fill="rgb(207,0,43)" rx="2" ry="2" />
+<text  x="981.46" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h1() const (138 samples, 0.07%)</title><rect x="765.0" y="149" width="0.8" height="15.0" fill="rgb(252,33,15)" rx="2" ry="2" />
+<text  x="767.95" y="159.5" ></text>
+</g>
+<g >
+<title>_int_free&lt;0000000000080f70&gt; (3,033 samples, 1.56%)</title><rect x="501.5" y="117" width="18.4" height="15.0" fill="rgb(250,186,28)" rx="2" ry="2" />
+<text  x="504.48" y="127.5" ></text>
+</g>
+<g >
+<title>__sqrt (204 samples, 0.10%)</title><rect x="678.9" y="197" width="1.3" height="15.0" fill="rgb(240,0,44)" rx="2" ry="2" />
+<text  x="681.92" y="207.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;std::vector&lt;AtomElement*, std::allocator&lt;AtomElement*&gt; &gt;, std::allocator&lt;std::vector&lt;AtomElement*, std::allocator&lt;AtomElement*&gt; &gt; &gt; &gt;::operator[](unsigned long) (17 samples, 0.01%)</title><rect x="17.0" y="197" width="0.1" height="15.0" fill="rgb(211,171,19)" rx="2" ry="2" />
+<text  x="20.01" y="207.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;std::__decay_and_strip&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::__type, std::__decay_and_strip&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::__type&gt; std::make_pair&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;(std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp;) (195 samples, 0.10%)</title><rect x="792.7" y="181" width="1.2" height="15.0" fill="rgb(246,107,12)" rx="2" ry="2" />
+<text  x="795.74" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_alloc&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::_M_node_allocator() (631 samples, 0.32%)</title><rect x="480.9" y="149" width="3.8" height="15.0" fill="rgb(235,90,13)" rx="2" ry="2" />
+<text  x="483.89" y="159.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;KeyDb, EamPhi&gt;::get(KeyDb) (463 samples, 0.24%)</title><rect x="1059.9" y="181" width="2.8" height="15.0" fill="rgb(233,108,35)" rx="2" ry="2" />
+<text  x="1062.93" y="191.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::clear() (17,524 samples, 9.01%)</title><rect x="418.2" y="197" width="106.3" height="15.0" fill="rgb(233,195,47)" rx="2" ry="2" />
+<text  x="421.22" y="207.5" >std::_Hashtab..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_extract() const (147 samples, 0.08%)</title><rect x="790.7" y="165" width="0.9" height="15.0" fill="rgb(224,11,46)" rx="2" ry="2" />
+<text  x="793.71" y="175.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_bucket_index(long const&amp;, unsigned long) const (287 samples, 0.15%)</title><rect x="720.6" y="181" width="1.7" height="15.0" fill="rgb(235,28,34)" rx="2" ry="2" />
+<text  x="723.58" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_extract() const (188 samples, 0.10%)</title><rect x="243.4" y="101" width="1.1" height="15.0" fill="rgb(214,133,21)" rx="2" ry="2" />
+<text  x="246.40" y="111.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Prime_rehash_policy::_M_need_rehash(unsigned long, unsigned long, unsigned long) const&lt;00000000000c1f30&gt; (81 samples, 0.04%)</title><rect x="259.4" y="133" width="0.5" height="15.0" fill="rgb(238,122,5)" rx="2" ry="2" />
+<text  x="262.44" y="143.5" ></text>
+</g>
+<g >
+<title>operator new(unsigned long)&lt;0000000000098f40&gt; (13,354 samples, 6.87%)</title><rect x="302.3" y="101" width="81.0" height="15.0" fill="rgb(239,123,10)" rx="2" ry="2" />
+<text  x="305.26" y="111.5" >operator ..</text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_equals(long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) const (1,764 samples, 0.91%)</title><rect x="990.5" y="181" width="10.7" height="15.0" fill="rgb(232,82,47)" rx="2" ry="2" />
+<text  x="993.54" y="191.5" ></text>
+</g>
+<g >
+<title>AtomElement::isInterElement() const&lt;0000000000466a72&gt; (122 samples, 0.06%)</title><rect x="1017.7" y="213" width="0.7" height="15.0" fill="rgb(213,89,25)" rx="2" ry="2" />
+<text  x="1020.67" y="223.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long const, AtomElement*&gt; const&amp; std::forward&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;(std::remove_reference&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;::type&amp;) (156 samples, 0.08%)</title><rect x="761.2" y="133" width="0.9" height="15.0" fill="rgb(224,118,0)" rx="2" ry="2" />
+<text  x="764.18" y="143.5" ></text>
+</g>
+<g >
+<title>AtomElement*&amp;&amp; std::forward&lt;AtomElement*&gt;(std::remove_reference&lt;AtomElement*&gt;::type&amp;) (98 samples, 0.05%)</title><rect x="411.0" y="197" width="0.6" height="15.0" fill="rgb(218,222,3)" rx="2" ry="2" />
+<text  x="413.96" y="207.5" ></text>
+</g>
+<g >
+<title>NewtonMotion::computeFirst(AtomList*, InterAtomList*)&lt;00000000004690a2&gt; (37 samples, 0.02%)</title><rect x="118.4" y="229" width="0.2" height="15.0" fill="rgb(239,73,1)" rx="2" ry="2" />
+<text  x="121.42" y="239.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;long, std::allocator&lt;long&gt; &gt;::end() (50 samples, 0.03%)</title><rect x="1002.4" y="213" width="0.3" height="15.0" fill="rgb(247,60,22)" rx="2" ry="2" />
+<text  x="1005.42" y="223.5" ></text>
+</g>
+<g >
+<title>NewtonMotion::computeSecond(AtomList*, InterAtomList*)&lt;00000000004692a6&gt; (31 samples, 0.02%)</title><rect x="118.6" y="229" width="0.2" height="15.0" fill="rgb(223,203,22)" rx="2" ry="2" />
+<text  x="121.64" y="239.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::equal_range(long const&amp;) (12,454 samples, 6.40%)</title><rect x="926.9" y="197" width="75.5" height="15.0" fill="rgb(214,226,18)" rx="2" ry="2" />
+<text  x="929.85" y="207.5" >std::_Ha..</text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_bucket_index(long const&amp;, unsigned long) const (2,357 samples, 1.21%)</title><rect x="193.2" y="133" width="14.3" height="15.0" fill="rgb(229,76,42)" rx="2" ry="2" />
+<text  x="196.19" y="143.5" ></text>
+</g>
+<g >
+<title>int const&amp; std::min&lt;int&gt;(int const&amp;, int const&amp;) (77 samples, 0.04%)</title><rect x="681.1" y="197" width="0.4" height="15.0" fill="rgb(230,225,20)" rx="2" ry="2" />
+<text  x="684.06" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_eq() const (144 samples, 0.07%)</title><rect x="1000.4" y="165" width="0.8" height="15.0" fill="rgb(212,169,42)" rx="2" ry="2" />
+<text  x="1003.37" y="175.5" ></text>
+</g>
+<g >
+<title>poll_active_fboxes&lt;000000000015df30&gt; (27 samples, 0.01%)</title><rect x="117.7" y="165" width="0.1" height="15.0" fill="rgb(220,208,25)" rx="2" ry="2" />
+<text  x="120.65" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_eq() const (143 samples, 0.07%)</title><rect x="791.6" y="165" width="0.9" height="15.0" fill="rgb(219,123,2)" rx="2" ry="2" />
+<text  x="794.60" y="175.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (17 samples, 0.01%)</title><rect x="10.1" y="213" width="0.1" height="15.0" fill="rgb(235,11,9)" rx="2" ry="2" />
+<text  x="13.13" y="223.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;AtomElement*, std::allocator&lt;AtomElement*&gt; &gt;::push_back(AtomElement*&amp;&amp;) (71 samples, 0.04%)</title><rect x="114.1" y="181" width="0.4" height="15.0" fill="rgb(221,210,42)" rx="2" ry="2" />
+<text  x="117.12" y="191.5" ></text>
+</g>
+<g >
+<title>atom::interForce(eam*, comm::Domain*, double&amp;)&lt;000000000046505a&gt; (38,024 samples, 19.55%)</title><rect x="563.6" y="229" width="230.7" height="15.0" fill="rgb(226,134,53)" rx="2" ry="2" />
+<text  x="566.63" y="239.5" >atom::interForce(eam*, comm::D..</text>
+</g>
+<g >
+<title>atom::latRho(eam*, comm::Domain*, double&amp;)&lt;0000000000463bec&gt; (57 samples, 0.03%)</title><rect x="10.4" y="229" width="0.3" height="15.0" fill="rgb(214,83,13)" rx="2" ry="2" />
+<text  x="13.40" y="239.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_rehash(unsigned long, unsigned long const&amp;) (520 samples, 0.27%)</title><rect x="246.0" y="133" width="3.2" height="15.0" fill="rgb(252,216,39)" rx="2" ry="2" />
+<text  x="249.04" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;::_S_get(std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;&amp;) (92 samples, 0.05%)</title><rect x="249.9" y="117" width="0.5" height="15.0" fill="rgb(234,164,43)" rx="2" ry="2" />
+<text  x="252.87" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const&lt;00000000004086ee&gt; (42 samples, 0.02%)</title><rect x="246.7" y="85" width="0.3" height="15.0" fill="rgb(244,97,21)" rx="2" ry="2" />
+<text  x="249.72" y="95.5" ></text>
+</g>
+<g >
+<title>MPI_Irecv (87 samples, 0.04%)</title><rect x="115.2" y="213" width="0.5" height="15.0" fill="rgb(222,163,7)" rx="2" ry="2" />
+<text  x="118.18" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h1() const (30 samples, 0.02%)</title><rect x="988.8" y="165" width="0.2" height="15.0" fill="rgb(236,207,32)" rx="2" ry="2" />
+<text  x="991.82" y="175.5" ></text>
+</g>
+<g >
+<title>MPIDI_CH3I_Progress&lt;0000000000160d30&gt; (4,112 samples, 2.11%)</title><rect x="1137.4" y="165" width="25.0" height="15.0" fill="rgb(252,19,22)" rx="2" ry="2" />
+<text  x="1140.44" y="175.5" >M..</text>
+</g>
+<g >
+<title>MPID_Segment_manipulate&lt;000000000017d5f0&gt; (38 samples, 0.02%)</title><rect x="116.1" y="117" width="0.2" height="15.0" fill="rgb(249,179,33)" rx="2" ry="2" />
+<text  x="119.08" y="127.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;unsigned short, OneWayEam&gt;::get(unsigned short) (391 samples, 0.20%)</title><rect x="1064.0" y="181" width="2.4" height="15.0" fill="rgb(221,106,7)" rx="2" ry="2" />
+<text  x="1067.00" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::operator++() (609 samples, 0.31%)</title><rect x="913.0" y="213" width="3.7" height="15.0" fill="rgb(253,13,43)" rx="2" ry="2" />
+<text  x="915.96" y="223.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::end() (103 samples, 0.05%)</title><rect x="779.6" y="181" width="0.6" height="15.0" fill="rgb(242,76,29)" rx="2" ry="2" />
+<text  x="782.62" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_extract() const (267 samples, 0.14%)</title><rect x="763.3" y="149" width="1.7" height="15.0" fill="rgb(249,38,32)" rx="2" ry="2" />
+<text  x="766.33" y="159.5" ></text>
+</g>
+<g >
+<title>main&lt;0000000000450a45&gt; (194,480 samples, 100.00%)</title><rect x="10.0" y="325" width="1180.0" height="15.0" fill="rgb(221,131,31)" rx="2" ry="2" />
+<text  x="13.00" y="335.5" >main&lt;0000000000450a45&gt;</text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::operator*() const (1,333 samples, 0.69%)</title><rect x="129.5" y="213" width="8.1" height="15.0" fill="rgb(219,40,44)" rx="2" ry="2" />
+<text  x="132.50" y="223.5" ></text>
+</g>
+<g >
+<title>NewtonMotion::firststep(AtomList*, InterAtomList*)&lt;0000000000468eea&gt; (37 samples, 0.02%)</title><rect x="118.4" y="245" width="0.2" height="15.0" fill="rgb(233,215,54)" rx="2" ry="2" />
+<text  x="121.42" y="255.5" ></text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::operator*() const (2,992 samples, 1.54%)</title><rect x="681.5" y="213" width="18.2" height="15.0" fill="rgb(205,211,7)" rx="2" ry="2" />
+<text  x="684.53" y="223.5" ></text>
+</g>
+<g >
+<title>MPID_nem_tcp_connpoll&lt;0000000000176540&gt; (1,057 samples, 0.54%)</title><rect x="1152.7" y="149" width="6.4" height="15.0" fill="rgb(245,181,22)" rx="2" ry="2" />
+<text  x="1155.66" y="159.5" ></text>
+</g>
+<g >
+<title>_init&lt;0000000000406908&gt; (20 samples, 0.01%)</title><rect x="302.1" y="101" width="0.2" height="15.0" fill="rgb(243,143,30)" rx="2" ry="2" />
+<text  x="305.14" y="111.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_Node_iterator_base(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (264 samples, 0.14%)</title><rect x="257.8" y="117" width="1.6" height="15.0" fill="rgb(220,134,11)" rx="2" ry="2" />
+<text  x="260.84" y="127.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long const, AtomElement*&gt;&amp; std::forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::remove_reference&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;::type&amp;) (42 samples, 0.02%)</title><rect x="785.7" y="133" width="0.2" height="15.0" fill="rgb(228,208,17)" rx="2" ry="2" />
+<text  x="788.66" y="143.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_index_m2m&lt;0000000000184fd0&gt; (32 samples, 0.02%)</title><rect x="115.9" y="101" width="0.2" height="15.0" fill="rgb(238,1,25)" rx="2" ry="2" />
+<text  x="118.88" y="111.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Equal_helper&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, unsigned long, false&gt;::_S_equals(std::equal_to&lt;long&gt; const&amp;, std::__detail::_Select1st const&amp;, long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (206 samples, 0.11%)</title><rect x="778.2" y="133" width="1.3" height="15.0" fill="rgb(233,210,20)" rx="2" ry="2" />
+<text  x="781.20" y="143.5" ></text>
+</g>
+<g >
+<title>pack::unpack_rho(int, int, AtomList&amp;, double*, std::vector&lt;std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;, std::allocator&lt;std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; &gt; &gt;&amp;)&lt;000000000046205d&gt; (46 samples, 0.02%)</title><rect x="1162.4" y="181" width="0.3" height="15.0" fill="rgb(245,135,11)" rx="2" ry="2" />
+<text  x="1165.39" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::_Node_iterator(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (45 samples, 0.02%)</title><rect x="792.5" y="181" width="0.2" height="15.0" fill="rgb(217,148,46)" rx="2" ry="2" />
+<text  x="795.47" y="191.5" ></text>
+</g>
+<g >
+<title>MPIR_Wait_impl&lt;00000000000c7ac0&gt; (22 samples, 0.01%)</title><rect x="11.4" y="197" width="0.2" height="15.0" fill="rgb(211,174,47)" rx="2" ry="2" />
+<text  x="14.43" y="207.5" ></text>
+</g>
+<g >
+<title>kiwi::kiwiApp::start()&lt;000000000048d03c&gt; (194,478 samples, 100.00%)</title><rect x="10.0" y="293" width="1180.0" height="15.0" fill="rgb(219,15,13)" rx="2" ry="2" />
+<text  x="13.01" y="303.5" >kiwi::kiwiApp::start()&lt;000000000048d03c&gt;</text>
+</g>
+<g >
+<title>__GI___libc_malloc (12,939 samples, 6.65%)</title><rect x="304.6" y="85" width="78.5" height="15.0" fill="rgb(223,223,17)" rx="2" ry="2" />
+<text  x="307.55" y="95.5" >__GI___li..</text>
+</g>
+<g >
+<title>_init&lt;000000000008e868&gt; (38 samples, 0.02%)</title><rect x="383.1" y="85" width="0.2" height="15.0" fill="rgb(223,73,31)" rx="2" ry="2" />
+<text  x="386.06" y="95.5" ></text>
+</g>
+<g >
+<title>LatPacker::onReceive(LatParticleData*, unsigned long, int, int)&lt;0000000000461230&gt; (38 samples, 0.02%)</title><rect x="10.8" y="213" width="0.2" height="15.0" fill="rgb(224,104,23)" rx="2" ry="2" />
+<text  x="13.75" y="223.5" ></text>
+</g>
+<g >
+<title>operator new(unsigned long)&lt;0000000000098f40&gt; (198 samples, 0.10%)</title><rect x="13.4" y="101" width="1.2" height="15.0" fill="rgb(252,64,43)" rx="2" ry="2" />
+<text  x="16.40" y="111.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long, AtomElement*&gt;&amp;&amp; std::forward&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::remove_reference&lt;std::pair&lt;long, AtomElement*&gt; &gt;::type&amp;) (201 samples, 0.10%)</title><rect x="406.0" y="165" width="1.3" height="15.0" fill="rgb(242,216,27)" rx="2" ry="2" />
+<text  x="409.04" y="175.5" ></text>
+</g>
+<g >
+<title>NewtonMotion::computeFirst(AtomList*, InterAtomList*)::{lambda(AtomElement&amp;)#1}::operator()(AtomElement&amp;) const (22 samples, 0.01%)</title><rect x="118.5" y="197" width="0.1" height="15.0" fill="rgb(221,110,40)" rx="2" ry="2" />
+<text  x="121.51" y="207.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (3,609 samples, 1.86%)</title><rect x="1018.4" y="213" width="21.9" height="15.0" fill="rgb(222,97,16)" rx="2" ry="2" />
+<text  x="1021.44" y="223.5" >A..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_extract() const (272 samples, 0.14%)</title><rect x="971.6" y="149" width="1.7" height="15.0" fill="rgb(239,156,20)" rx="2" ry="2" />
+<text  x="974.61" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Mod_range_hashing::operator()(unsigned long, unsigned long) const&lt;00000000004086ee&gt; (166 samples, 0.09%)</title><rect x="930.1" y="149" width="1.0" height="15.0" fill="rgb(247,12,0)" rx="2" ry="2" />
+<text  x="933.06" y="159.5" ></text>
+</g>
+<g >
+<title>InterAtomList::borderInter(comm::Domain*)&lt;000000000045b294&gt; (17,434 samples, 8.96%)</title><rect x="12.1" y="245" width="105.7" height="15.0" fill="rgb(210,64,50)" rx="2" ry="2" />
+<text  x="15.06" y="255.5" >InterAtomLis..</text>
+</g>
+<g >
+<title>__gnu_cxx::new_allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;::allocate(unsigned long, void const*) (13,873 samples, 7.13%)</title><rect x="299.1" y="117" width="84.2" height="15.0" fill="rgb(214,12,8)" rx="2" ry="2" />
+<text  x="302.11" y="127.5" >__gnu_cxx..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_hash_code(long const&amp;) const (2,927 samples, 1.51%)</title><rect x="265.6" y="149" width="17.7" height="15.0" fill="rgb(228,104,39)" rx="2" ry="2" />
+<text  x="268.56" y="159.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (19 samples, 0.01%)</title><rect x="11.1" y="181" width="0.1" height="15.0" fill="rgb(222,102,54)" rx="2" ry="2" />
+<text  x="14.09" y="191.5" ></text>
+</g>
+<g >
+<title>AtomElement::isInterElement() const&lt;0000000000466a72&gt; (476 samples, 0.24%)</title><rect x="1081.0" y="213" width="2.9" height="15.0" fill="rgb(246,95,34)" rx="2" ry="2" />
+<text  x="1083.97" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;2, std::__detail::_Mod_range_hashing, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;2, std::__detail::_Mod_range_hashing, true&gt; const&amp;) (34 samples, 0.02%)</title><rect x="766.1" y="133" width="0.3" height="15.0" fill="rgb(221,72,52)" rx="2" ry="2" />
+<text  x="769.15" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Equal_helper&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, unsigned long, false&gt;::_S_equals(std::equal_to&lt;long&gt; const&amp;, std::__detail::_Select1st const&amp;, long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (3,406 samples, 1.75%)</title><rect x="222.7" y="101" width="20.7" height="15.0" fill="rgb(245,211,16)" rx="2" ry="2" />
+<text  x="225.74" y="111.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;unsigned short, OneWayEam&gt;::get(unsigned short) (765 samples, 0.39%)</title><rect x="895.2" y="181" width="4.6" height="15.0" fill="rgb(211,19,42)" rx="2" ry="2" />
+<text  x="898.20" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_equals(long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) const (1,682 samples, 0.86%)</title><rect x="782.3" y="181" width="10.2" height="15.0" fill="rgb(234,148,50)" rx="2" ry="2" />
+<text  x="785.26" y="191.5" ></text>
+</g>
+<g >
+<title>void std::allocator_traits&lt;std::allocator&lt;AtomElement*&gt; &gt;::construct&lt;AtomElement*, AtomElement*&gt;(std::allocator&lt;AtomElement*&gt;&amp;, AtomElement**, AtomElement*&amp;&amp;) (30 samples, 0.02%)</title><rect x="114.3" y="149" width="0.2" height="15.0" fill="rgb(234,149,17)" rx="2" ry="2" />
+<text  x="117.33" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_bucket_index(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; const*, unsigned long) const (8,614 samples, 4.43%)</title><rect x="931.8" y="165" width="52.3" height="15.0" fill="rgb(246,205,11)" rx="2" ry="2" />
+<text  x="934.80" y="175.5" >std::..</text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;(std::pair&lt;long const, AtomElement*&gt; const&amp;) const (33 samples, 0.02%)</title><rect x="246.4" y="85" width="0.2" height="15.0" fill="rgb(243,209,53)" rx="2" ry="2" />
+<text  x="249.36" y="95.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (33 samples, 0.02%)</title><rect x="1136.1" y="165" width="0.2" height="15.0" fill="rgb(236,123,1)" rx="2" ry="2" />
+<text  x="1139.13" y="175.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;KeyDb, EamPhi&gt;::index(KeyDb) (304 samples, 0.16%)</title><rect x="673.2" y="165" width="1.8" height="15.0" fill="rgb(231,0,13)" rx="2" ry="2" />
+<text  x="676.19" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Equal_helper&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, unsigned long, false&gt;::_S_equals(std::equal_to&lt;long&gt; const&amp;, std::__detail::_Select1st const&amp;, long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (1,276 samples, 0.66%)</title><rect x="783.0" y="165" width="7.7" height="15.0" fill="rgb(244,54,51)" rx="2" ry="2" />
+<text  x="785.96" y="175.5" ></text>
+</g>
+<g >
+<title>MPID_Irecv&lt;00000000001514e0&gt; (86 samples, 0.04%)</title><rect x="115.2" y="197" width="0.5" height="15.0" fill="rgb(246,100,15)" rx="2" ry="2" />
+<text  x="118.19" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_base::_Hash_node_base()&lt;00000000004086d8&gt; (157 samples, 0.08%)</title><rect x="290.4" y="101" width="1.0" height="15.0" fill="rgb(229,219,15)" rx="2" ry="2" />
+<text  x="293.40" y="111.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_membuf&lt;AtomElement&gt;::_M_ptr() (594 samples, 0.31%)</title><rect x="134.0" y="181" width="3.6" height="15.0" fill="rgb(207,82,6)" rx="2" ry="2" />
+<text  x="136.99" y="191.5" ></text>
+</g>
+<g >
+<title>eam::rhoContribution(unsigned short, double)&lt;00000000004a1ce4&gt; (21 samples, 0.01%)</title><rect x="10.6" y="213" width="0.1" height="15.0" fill="rgb(244,79,23)" rx="2" ry="2" />
+<text  x="13.60" y="223.5" ></text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::operator*() const (1,424 samples, 0.73%)</title><rect x="904.3" y="213" width="8.6" height="15.0" fill="rgb(246,220,38)" rx="2" ry="2" />
+<text  x="907.30" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() (938 samples, 0.48%)</title><rect x="251.1" y="133" width="5.7" height="15.0" fill="rgb(228,97,42)" rx="2" ry="2" />
+<text  x="254.12" y="143.5" ></text>
+</g>
+<g >
+<title>MPID_nem_network_poll&lt;000000000016ada0&gt; (866 samples, 0.45%)</title><rect x="1147.4" y="149" width="5.3" height="15.0" fill="rgb(244,61,8)" rx="2" ry="2" />
+<text  x="1150.41" y="159.5" ></text>
+</g>
+<g >
+<title>OneWayEamList::getEamItemByType(unsigned short)&lt;00000000004a4d74&gt; (486 samples, 0.25%)</title><rect x="1063.4" y="197" width="3.0" height="15.0" fill="rgb(232,89,16)" rx="2" ry="2" />
+<text  x="1066.42" y="207.5" ></text>
+</g>
+<g >
+<title>OneWayEamList::getEamItemByType(unsigned short)&lt;00000000004a4d74&gt; (865 samples, 0.44%)</title><rect x="894.6" y="197" width="5.2" height="15.0" fill="rgb(240,62,46)" rx="2" ry="2" />
+<text  x="897.59" y="207.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (17 samples, 0.01%)</title><rect x="10.5" y="213" width="0.1" height="15.0" fill="rgb(222,175,30)" rx="2" ry="2" />
+<text  x="13.48" y="223.5" ></text>
+</g>
+<g >
+<title>ws::findNearLatAtomInSubBox(AtomList*, AtomElement const&amp;, comm::Domain const*)&lt;000000000045dc6a&gt; (25 samples, 0.01%)</title><rect x="1163.4" y="229" width="0.1" height="15.0" fill="rgb(211,125,49)" rx="2" ry="2" />
+<text  x="1166.39" y="239.5" ></text>
+</g>
+<g >
+<title>MPIDU_Sched_are_pending&lt;000000000018bb80&gt; (195 samples, 0.10%)</title><rect x="1146.2" y="149" width="1.2" height="15.0" fill="rgb(236,186,37)" rx="2" ry="2" />
+<text  x="1149.21" y="159.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::__normal_iterator(long* const&amp;) (120 samples, 0.06%)</title><rect x="1109.0" y="197" width="0.7" height="15.0" fill="rgb(243,146,3)" rx="2" ry="2" />
+<text  x="1112.02" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;1, std::hash&lt;long&gt;, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;1, std::hash&lt;long&gt;, true&gt; const&amp;) (211 samples, 0.11%)</title><rect x="269.8" y="117" width="1.3" height="15.0" fill="rgb(232,63,10)" rx="2" ry="2" />
+<text  x="272.77" y="127.5" ></text>
+</g>
+<g >
+<title>MPI_Wait (22 samples, 0.01%)</title><rect x="11.4" y="213" width="0.2" height="15.0" fill="rgb(225,81,52)" rx="2" ry="2" />
+<text  x="14.43" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_alloc&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::_M_deallocate_nodes(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (17,375 samples, 8.93%)</title><rect x="419.1" y="181" width="105.4" height="15.0" fill="rgb(243,13,10)" rx="2" ry="2" />
+<text  x="422.12" y="191.5" >std::__detai..</text>
+</g>
+<g >
+<title>atom_type::getTypeIdByType(atom_type::atom_type)&lt;0000000000466a2f&gt; (139 samples, 0.07%)</title><rect x="1043.5" y="213" width="0.8" height="15.0" fill="rgb(247,221,31)" rx="2" ry="2" />
+<text  x="1046.46" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp; std::forward&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;(std::remove_reference&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::type&amp;) (29 samples, 0.01%)</title><rect x="1002.2" y="149" width="0.2" height="15.0" fill="rgb(228,129,50)" rx="2" ry="2" />
+<text  x="1005.24" y="159.5" ></text>
+</g>
+<g >
+<title>MPID_Probe&lt;00000000001531e0&gt; (4,112 samples, 2.11%)</title><rect x="1137.4" y="181" width="25.0" height="15.0" fill="rgb(237,71,31)" rx="2" ry="2" />
+<text  x="1140.44" y="191.5" >M..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() (1,076 samples, 0.55%)</title><rect x="398.5" y="149" width="6.5" height="15.0" fill="rgb(216,199,52)" rx="2" ry="2" />
+<text  x="401.48" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt; const&amp;) (77 samples, 0.04%)</title><rect x="244.1" y="85" width="0.4" height="15.0" fill="rgb(205,195,15)" rx="2" ry="2" />
+<text  x="247.08" y="95.5" ></text>
+</g>
+<g >
+<title>MPIDI_CH3I_Progress&lt;0000000000160d30&gt; (110 samples, 0.06%)</title><rect x="115.7" y="181" width="0.7" height="15.0" fill="rgb(251,57,25)" rx="2" ry="2" />
+<text  x="118.71" y="191.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_insert_multi_node(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (14,372 samples, 7.39%)</title><rect x="175.3" y="149" width="87.2" height="15.0" fill="rgb(212,58,14)" rx="2" ry="2" />
+<text  x="178.27" y="159.5" >std::_Hash..</text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_insert_bucket_begin(unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (21 samples, 0.01%)</title><rect x="245.9" y="133" width="0.1" height="15.0" fill="rgb(241,34,2)" rx="2" ry="2" />
+<text  x="248.92" y="143.5" ></text>
+</g>
+<g >
+<title>_init&lt;0000000000406908&gt; (39 samples, 0.02%)</title><rect x="563.4" y="197" width="0.2" height="15.0" fill="rgb(229,179,41)" rx="2" ry="2" />
+<text  x="566.40" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_Hash_node() (446 samples, 0.23%)</title><rect x="288.6" y="133" width="2.8" height="15.0" fill="rgb(214,120,41)" rx="2" ry="2" />
+<text  x="291.65" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_alloc&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::_M_node_allocator() (679 samples, 0.35%)</title><rect x="293.5" y="133" width="4.1" height="15.0" fill="rgb(206,97,23)" rx="2" ry="2" />
+<text  x="296.47" y="143.5" ></text>
+</g>
+<g >
+<title>long const&amp; std::forward&lt;long const&amp;&gt;(std::remove_reference&lt;long const&amp;&gt;::type&amp;) (210 samples, 0.11%)</title><rect x="411.6" y="197" width="1.2" height="15.0" fill="rgb(210,197,38)" rx="2" ry="2" />
+<text  x="414.55" y="207.5" ></text>
+</g>
+<g >
+<title>void AtomList::foreachSubBoxAtom&lt;NewtonMotion::computeSecond(AtomList*, InterAtomList*)::{lambda(AtomElement&amp;)#1}&gt;(NewtonMotion::computeSecond(AtomList*, InterAtomList*)::{lambda(AtomElement&amp;)#1}) (25 samples, 0.01%)</title><rect x="118.7" y="213" width="0.1" height="15.0" fill="rgb(207,107,12)" rx="2" ry="2" />
+<text  x="121.68" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_bucket_index(long const&amp;, unsigned long, unsigned long) const (225 samples, 0.12%)</title><rect x="929.7" y="165" width="1.4" height="15.0" fill="rgb(240,162,21)" rx="2" ry="2" />
+<text  x="932.70" y="175.5" ></text>
+</g>
+<g >
+<title>InterBorderPacker::onSend(LatParticleData*, unsigned long, int, int)&lt;000000000045e32a&gt; (348 samples, 0.18%)</title><rect x="15.0" y="213" width="2.1" height="15.0" fill="rgb(207,47,24)" rx="2" ry="2" />
+<text  x="18.01" y="223.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long, AtomElement*&gt;&amp;&amp; std::forward&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::remove_reference&lt;std::pair&lt;long, AtomElement*&gt; &gt;::type&amp;) (111 samples, 0.06%)</title><rect x="387.4" y="117" width="0.6" height="15.0" fill="rgb(212,77,38)" rx="2" ry="2" />
+<text  x="390.35" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_emplace&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::__detail::_Node_const_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, std::integral_constant&lt;bool, false&gt;, std::pair&lt;long, AtomElement*&gt;&amp;&amp;) (40,094 samples, 20.62%)</title><rect x="162.8" y="165" width="243.2" height="15.0" fill="rgb(223,105,44)" rx="2" ry="2" />
+<text  x="165.77" y="175.5" >std::__detail::_Node_iterator&lt;st..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (181 samples, 0.09%)</title><rect x="787.6" y="133" width="1.0" height="15.0" fill="rgb(253,129,11)" rx="2" ry="2" />
+<text  x="790.55" y="143.5" ></text>
+</g>
+<g >
+<title>void comm::neiSendReceive&lt;double, 1275070475&gt;(Packer&lt;double&gt;*, comm::mpi_process, int const (&amp;) [3][2]) (4,430 samples, 2.28%)</title><rect x="1136.1" y="229" width="26.8" height="15.0" fill="rgb(234,146,44)" rx="2" ry="2" />
+<text  x="1139.06" y="239.5" >v..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_extract() const (157 samples, 0.08%)</title><rect x="999.4" y="165" width="1.0" height="15.0" fill="rgb(239,226,1)" rx="2" ry="2" />
+<text  x="1002.42" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;* std::addressof&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;&amp;) (275 samples, 0.14%)</title><rect x="521.1" y="133" width="1.6" height="15.0" fill="rgb(239,90,53)" rx="2" ry="2" />
+<text  x="524.07" y="143.5" ></text>
+</g>
+<g >
+<title>long const&amp; std::__pair_get&lt;0ul&gt;::__get&lt;long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (77 samples, 0.04%)</title><rect x="994.9" y="117" width="0.4" height="15.0" fill="rgb(237,133,27)" rx="2" ry="2" />
+<text  x="997.85" y="127.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;std::__decay_and_strip&lt;long const&amp;&gt;::__type, std::__decay_and_strip&lt;AtomElement*&gt;::__type&gt; std::make_pair&lt;long const&amp;, AtomElement*&gt;(long const&amp;, AtomElement*&amp;&amp;) (1,614 samples, 0.83%)</title><rect x="408.4" y="213" width="9.8" height="15.0" fill="rgb(251,156,44)" rx="2" ry="2" />
+<text  x="411.43" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::operator-&gt;() const (1,654 samples, 0.85%)</title><rect x="916.7" y="213" width="10.0" height="15.0" fill="rgb(220,106,4)" rx="2" ry="2" />
+<text  x="919.65" y="223.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (57 samples, 0.03%)</title><rect x="480.5" y="117" width="0.4" height="15.0" fill="rgb(252,126,33)" rx="2" ry="2" />
+<text  x="483.54" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h1() const (465 samples, 0.24%)</title><rect x="268.2" y="133" width="2.9" height="15.0" fill="rgb(211,58,4)" rx="2" ry="2" />
+<text  x="271.23" y="143.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_membuf&lt;AtomElement&gt;::_M_ptr() (1,205 samples, 0.62%)</title><rect x="692.4" y="181" width="7.3" height="15.0" fill="rgb(251,158,14)" rx="2" ry="2" />
+<text  x="695.37" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_M_incr() (725 samples, 0.37%)</title><rect x="700.1" y="197" width="4.4" height="15.0" fill="rgb(249,43,25)" rx="2" ry="2" />
+<text  x="703.15" y="207.5" ></text>
+</g>
+<g >
+<title>ws::isOutBox(AtomElement const&amp;, comm::Domain const*)&lt;000000000045da72&gt; (24 samples, 0.01%)</title><rect x="117.9" y="213" width="0.2" height="15.0" fill="rgb(216,221,0)" rx="2" ry="2" />
+<text  x="120.95" y="223.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt; const&amp;&gt;(std::pair&lt;long const, AtomElement*&gt; const&amp;) const (591 samples, 0.30%)</title><rect x="968.0" y="149" width="3.6" height="15.0" fill="rgb(250,36,45)" rx="2" ry="2" />
+<text  x="971.02" y="159.5" ></text>
+</g>
+<g >
+<title>long&amp;&amp; std::forward&lt;long&gt;(std::remove_reference&lt;long&gt;::type&amp;) (160 samples, 0.08%)</title><rect x="396.2" y="85" width="0.9" height="15.0" fill="rgb(224,26,10)" rx="2" ry="2" />
+<text  x="399.16" y="95.5" ></text>
+</g>
+<g >
+<title>int const&amp; std::max&lt;int&gt;(int const&amp;, int const&amp;) (56 samples, 0.03%)</title><rect x="1068.6" y="197" width="0.4" height="15.0" fill="rgb(213,20,47)" rx="2" ry="2" />
+<text  x="1071.63" y="207.5" ></text>
+</g>
+<g >
+<title>bool __gnu_cxx::operator!=&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;(__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt; const&amp;, __gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt; const&amp;) (345 samples, 0.18%)</title><rect x="1110.8" y="213" width="2.1" height="15.0" fill="rgb(216,157,20)" rx="2" ry="2" />
+<text  x="1113.77" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::_Node_iterator(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (70 samples, 0.04%)</title><rect x="779.8" y="165" width="0.4" height="15.0" fill="rgb(243,110,1)" rx="2" ry="2" />
+<text  x="782.82" y="175.5" ></text>
+</g>
+<g >
+<title>void std::allocator_traits&lt;std::allocator&lt;std::_List_node&lt;AtomElement&gt; &gt; &gt;::construct&lt;AtomElement, AtomElement const&amp;&gt;(std::allocator&lt;std::_List_node&lt;AtomElement&gt; &gt;&amp;, AtomElement*, AtomElement const&amp;) (44 samples, 0.02%)</title><rect x="14.6" y="149" width="0.3" height="15.0" fill="rgb(232,44,5)" rx="2" ry="2" />
+<text  x="17.60" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() (276 samples, 0.14%)</title><rect x="787.0" y="149" width="1.6" height="15.0" fill="rgb(217,92,31)" rx="2" ry="2" />
+<text  x="789.97" y="159.5" ></text>
+</g>
+<g >
+<title>int const&amp; std::min&lt;int&gt;(int const&amp;, int const&amp;) (133 samples, 0.07%)</title><rect x="1133.1" y="197" width="0.8" height="15.0" fill="rgb(216,6,50)" rx="2" ry="2" />
+<text  x="1136.08" y="207.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_unpack&lt;0000000000185c10&gt; (28 samples, 0.01%)</title><rect x="115.4" y="149" width="0.2" height="15.0" fill="rgb(252,10,22)" rx="2" ry="2" />
+<text  x="118.39" y="159.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_manipulate&lt;000000000017d5f0&gt; (18 samples, 0.01%)</title><rect x="115.6" y="101" width="0.1" height="15.0" fill="rgb(227,111,21)" rx="2" ry="2" />
+<text  x="118.60" y="111.5" ></text>
+</g>
+<g >
+<title>_start&lt;00000000004077c8&gt; (194,480 samples, 100.00%)</title><rect x="10.0" y="357" width="1180.0" height="15.0" fill="rgb(254,181,31)" rx="2" ry="2" />
+<text  x="13.00" y="367.5" >_start&lt;00000000004077c8&gt;</text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::_Node_iterator(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (433 samples, 0.22%)</title><rect x="256.8" y="133" width="2.6" height="15.0" fill="rgb(234,105,13)" rx="2" ry="2" />
+<text  x="259.81" y="143.5" ></text>
+</g>
+<g >
+<title>std::hash&lt;long&gt;::operator()(long) const (20 samples, 0.01%)</title><rect x="780.7" y="165" width="0.2" height="15.0" fill="rgb(207,154,23)" rx="2" ry="2" />
+<text  x="783.74" y="175.5" ></text>
+</g>
+<g >
+<title>lmt_shm_send_progress&lt;000000000016c9c0&gt; (38 samples, 0.02%)</title><rect x="116.1" y="149" width="0.2" height="15.0" fill="rgb(231,118,52)" rx="2" ry="2" />
+<text  x="119.08" y="159.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_pack&lt;0000000000185bb0&gt; (18 samples, 0.01%)</title><rect x="115.6" y="117" width="0.1" height="15.0" fill="rgb(246,19,33)" rx="2" ry="2" />
+<text  x="118.60" y="127.5" ></text>
+</g>
+<g >
+<title>pack::unpack_force(int, int, AtomList&amp;, double*, std::vector&lt;std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;, std::allocator&lt;std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; &gt; &gt;&amp;)&lt;0000000000462850&gt; (64 samples, 0.03%)</title><rect x="1163.6" y="181" width="0.4" height="15.0" fill="rgb(222,21,47)" rx="2" ry="2" />
+<text  x="1166.56" y="191.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long const, AtomElement*&gt;&amp; std::forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::remove_reference&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;::type&amp;) (290 samples, 0.15%)</title><rect x="170.4" y="133" width="1.8" height="15.0" fill="rgb(240,15,26)" rx="2" ry="2" />
+<text  x="173.43" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_Node_iterator_base(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (194 samples, 0.10%)</title><rect x="161.6" y="133" width="1.2" height="15.0" fill="rgb(209,69,11)" rx="2" ry="2" />
+<text  x="164.59" y="143.5" ></text>
+</g>
+<g >
+<title>MPID_nem_tcp_connpoll&lt;0000000000176540&gt; (52 samples, 0.03%)</title><rect x="117.2" y="165" width="0.4" height="15.0" fill="rgb(253,29,15)" rx="2" ry="2" />
+<text  x="120.25" y="175.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;long, std::allocator&lt;long&gt; &gt;::end() (374 samples, 0.19%)</title><rect x="1069.4" y="213" width="2.2" height="15.0" fill="rgb(232,211,15)" rx="2" ry="2" />
+<text  x="1072.35" y="223.5" ></text>
+</g>
+<g >
+<title>do_cts&lt;000000000016b7f0&gt; (24 samples, 0.01%)</title><rect x="115.6" y="165" width="0.1" height="15.0" fill="rgb(230,143,2)" rx="2" ry="2" />
+<text  x="118.56" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() const (430 samples, 0.22%)</title><rect x="975.8" y="133" width="2.7" height="15.0" fill="rgb(230,82,23)" rx="2" ry="2" />
+<text  x="978.85" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_eq() const (226 samples, 0.12%)</title><rect x="244.5" y="101" width="1.4" height="15.0" fill="rgb(249,53,2)" rx="2" ry="2" />
+<text  x="247.54" y="111.5" ></text>
+</g>
+<g >
+<title>int const&amp; std::min&lt;int&gt;(int const&amp;, int const&amp;) (63 samples, 0.03%)</title><rect x="1069.0" y="197" width="0.4" height="15.0" fill="rgb(206,24,39)" rx="2" ry="2" />
+<text  x="1071.97" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Insert_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_conjure_hashtable() (108 samples, 0.06%)</title><rect x="155.1" y="181" width="0.7" height="15.0" fill="rgb(241,83,23)" rx="2" ry="2" />
+<text  x="158.13" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_Hash_node_value_base() (247 samples, 0.13%)</title><rect x="289.9" y="117" width="1.5" height="15.0" fill="rgb(242,74,11)" rx="2" ry="2" />
+<text  x="292.86" y="127.5" ></text>
+</g>
+<g >
+<title>void std::__cxx11::list&lt;AtomElement, std::allocator&lt;AtomElement&gt; &gt;::_M_insert&lt;AtomElement const&amp;&gt;(std::_List_iterator&lt;AtomElement&gt;, AtomElement const&amp;) (401 samples, 0.21%)</title><rect x="12.5" y="181" width="2.4" height="15.0" fill="rgb(205,194,39)" rx="2" ry="2" />
+<text  x="15.49" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() (22 samples, 0.01%)</title><rect x="986.9" y="117" width="0.2" height="15.0" fill="rgb(226,116,13)" rx="2" ry="2" />
+<text  x="989.93" y="127.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (22 samples, 0.01%)</title><rect x="1162.8" y="165" width="0.1" height="15.0" fill="rgb(226,226,30)" rx="2" ry="2" />
+<text  x="1165.79" y="175.5" ></text>
+</g>
+<g >
+<title>poll_active_fboxes&lt;000000000015df30&gt; (454 samples, 0.23%)</title><rect x="1159.6" y="149" width="2.8" height="15.0" fill="rgb(210,95,39)" rx="2" ry="2" />
+<text  x="1162.63" y="159.5" ></text>
+</g>
+<g >
+<title>AtomElement::isInterElement() const&lt;0000000000466a72&gt; (21 samples, 0.01%)</title><rect x="655.1" y="213" width="0.2" height="15.0" fill="rgb(205,151,16)" rx="2" ry="2" />
+<text  x="658.15" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h2() const (112 samples, 0.06%)</title><rect x="974.1" y="149" width="0.7" height="15.0" fill="rgb(244,189,40)" rx="2" ry="2" />
+<text  x="977.11" y="159.5" ></text>
+</g>
+<g >
+<title>simulation::prepareForStart()&lt;0000000000452a86&gt; (122 samples, 0.06%)</title><rect x="10.0" y="261" width="0.8" height="15.0" fill="rgb(233,179,48)" rx="2" ry="2" />
+<text  x="13.01" y="271.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (226 samples, 0.12%)</title><rect x="292.1" y="117" width="1.4" height="15.0" fill="rgb(229,93,38)" rx="2" ry="2" />
+<text  x="295.10" y="127.5" ></text>
+</g>
+<g >
+<title>__GI___poll (222 samples, 0.11%)</title><rect x="1157.7" y="133" width="1.4" height="15.0" fill="rgb(244,143,23)" rx="2" ry="2" />
+<text  x="1160.73" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() const (605 samples, 0.31%)</title><rect x="974.8" y="149" width="3.7" height="15.0" fill="rgb(226,175,29)" rx="2" ry="2" />
+<text  x="977.79" y="159.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long, AtomElement*&gt;&amp;&amp; std::forward&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::remove_reference&lt;std::pair&lt;long, AtomElement*&gt; &gt;::type&amp;) (110 samples, 0.06%)</title><rect x="383.3" y="133" width="0.7" height="15.0" fill="rgb(208,110,3)" rx="2" ry="2" />
+<text  x="386.29" y="143.5" ></text>
+</g>
+<g >
+<title>InterAtomList::packExInterToSend(comm::Domain*, particledata*, int, int, unsigned int (*) [2], double*)&lt;000000000045b53e&gt; (41 samples, 0.02%)</title><rect x="117.8" y="229" width="0.3" height="15.0" fill="rgb(212,154,2)" rx="2" ry="2" />
+<text  x="120.84" y="239.5" ></text>
+</g>
+<g >
+<title>void std::allocator_traits&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::construct&lt;std::pair&lt;long const, AtomElement*&gt;, std::pair&lt;long, AtomElement*&gt; &gt;(std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;&amp;, std::pair&lt;long const, AtomElement*&gt;*, std::pair&lt;long, AtomElement*&gt;&amp;&amp;) (2,394 samples, 1.23%)</title><rect x="384.0" y="133" width="14.5" height="15.0" fill="rgb(205,29,23)" rx="2" ry="2" />
+<text  x="386.96" y="143.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_membuf&lt;AtomElement&gt;::_M_addr() (260 samples, 0.13%)</title><rect x="911.4" y="165" width="1.5" height="15.0" fill="rgb(236,193,48)" rx="2" ry="2" />
+<text  x="914.36" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Equal_helper&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, unsigned long, false&gt;::_S_equals(std::equal_to&lt;long&gt; const&amp;, std::__detail::_Select1st const&amp;, long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (206 samples, 0.11%)</title><rect x="986.6" y="133" width="1.2" height="15.0" fill="rgb(213,26,11)" rx="2" ry="2" />
+<text  x="989.59" y="143.5" ></text>
+</g>
+<g >
+<title>std::tuple_element&lt;0ul, std::pair&lt;long const, AtomElement*&gt; &gt;::type&amp; std::get&lt;0ul, long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (181 samples, 0.09%)</title><rect x="994.2" y="133" width="1.1" height="15.0" fill="rgb(222,48,48)" rx="2" ry="2" />
+<text  x="997.22" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (349 samples, 0.18%)</title><rect x="291.4" y="133" width="2.1" height="15.0" fill="rgb(250,184,2)" rx="2" ry="2" />
+<text  x="294.35" y="143.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_manipulate&lt;000000000017d5f0&gt; (28 samples, 0.01%)</title><rect x="115.4" y="133" width="0.2" height="15.0" fill="rgb(242,9,25)" rx="2" ry="2" />
+<text  x="118.39" y="143.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() const (128 samples, 0.07%)</title><rect x="977.7" y="101" width="0.8" height="15.0" fill="rgb(234,215,2)" rx="2" ry="2" />
+<text  x="980.68" y="111.5" ></text>
+</g>
+<g >
+<title>OneWayEamList::getEamItemByType(unsigned short)&lt;00000000004a4d74&gt; (461 samples, 0.24%)</title><rect x="676.1" y="197" width="2.8" height="15.0" fill="rgb(226,84,37)" rx="2" ry="2" />
+<text  x="679.12" y="207.5" ></text>
+</g>
+<g >
+<title>std::equal_to&lt;long&gt;::operator()(long const&amp;, long const&amp;) const (1,220 samples, 0.63%)</title><rect x="236.0" y="85" width="7.4" height="15.0" fill="rgb(238,222,51)" rx="2" ry="2" />
+<text  x="239.00" y="95.5" ></text>
+</g>
+<g >
+<title>pack::unpack_df(int, AtomList&amp;, double*, InterAtomList*, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;&amp;, std::vector&lt;AtomElement*, std::allocator&lt;AtomElement*&gt; &gt;&amp;)&lt;00000000004625e5&gt; (46 samples, 0.02%)</title><rect x="1136.1" y="181" width="0.2" height="15.0" fill="rgb(207,44,47)" rx="2" ry="2" />
+<text  x="1139.06" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_extract() (508 samples, 0.26%)</title><rect x="262.5" y="149" width="3.1" height="15.0" fill="rgb(212,126,36)" rx="2" ry="2" />
+<text  x="265.47" y="159.5" ></text>
+</g>
+<g >
+<title>bool std::__detail::operator!=&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;(std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; const&amp;, std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; const&amp;) (165 samples, 0.08%)</title><rect x="660.0" y="213" width="1.0" height="15.0" fill="rgb(231,100,12)" rx="2" ry="2" />
+<text  x="662.98" y="223.5" ></text>
+</g>
+<g >
+<title>void std::vector&lt;AtomElement*, std::allocator&lt;AtomElement*&gt; &gt;::emplace_back&lt;AtomElement*&gt;(AtomElement*&amp;&amp;) (53 samples, 0.03%)</title><rect x="114.2" y="165" width="0.3" height="15.0" fill="rgb(208,159,40)" rx="2" ry="2" />
+<text  x="117.23" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_const_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;::_Node_const_iterator(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (372 samples, 0.19%)</title><rect x="160.5" y="149" width="2.3" height="15.0" fill="rgb(223,77,47)" rx="2" ry="2" />
+<text  x="163.51" y="159.5" ></text>
+</g>
+<g >
+<title>double const&amp; std::min&lt;double&gt;(double const&amp;, double const&amp;) (228 samples, 0.12%)</title><rect x="1131.0" y="197" width="1.3" height="15.0" fill="rgb(231,44,24)" rx="2" ry="2" />
+<text  x="1133.96" y="207.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::pair&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;, true&gt;(std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp;, std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp;) (89 samples, 0.05%)</title><rect x="1001.9" y="165" width="0.5" height="15.0" fill="rgb(221,105,23)" rx="2" ry="2" />
+<text  x="1004.88" y="175.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) const (965 samples, 0.50%)</title><rect x="187.3" y="133" width="5.9" height="15.0" fill="rgb(252,11,31)" rx="2" ry="2" />
+<text  x="190.33" y="143.5" ></text>
+</g>
+<g >
+<title>bool std::__detail::operator!=&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;(std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; const&amp;, std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; const&amp;) (107 samples, 0.06%)</title><rect x="883.4" y="213" width="0.6" height="15.0" fill="rgb(248,134,11)" rx="2" ry="2" />
+<text  x="886.40" y="223.5" ></text>
+</g>
+<g >
+<title>std::_List_node&lt;AtomElement&gt;::_M_valptr() (1,996 samples, 1.03%)</title><rect x="687.6" y="197" width="12.1" height="15.0" fill="rgb(251,5,2)" rx="2" ry="2" />
+<text  x="690.57" y="207.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (459 samples, 0.24%)</title><rect x="402.2" y="117" width="2.8" height="15.0" fill="rgb(217,31,36)" rx="2" ry="2" />
+<text  x="405.23" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (1,507 samples, 0.77%)</title><rect x="708.7" y="197" width="9.2" height="15.0" fill="rgb(211,150,14)" rx="2" ry="2" />
+<text  x="711.73" y="207.5" ></text>
+</g>
+<g >
+<title>atom::interRho(eam*, comm::Domain*, double&amp;)&lt;0000000000463f52&gt; (34,351 samples, 17.66%)</title><rect x="794.3" y="229" width="208.5" height="15.0" fill="rgb(238,54,5)" rx="2" ry="2" />
+<text  x="797.34" y="239.5" >atom::interRho(eam*, comm::..</text>
+</g>
+<g >
+<title>MPIR_Wait_impl&lt;00000000000c7ac0&gt; (111 samples, 0.06%)</title><rect x="115.7" y="197" width="0.7" height="15.0" fill="rgb(208,192,29)" rx="2" ry="2" />
+<text  x="118.71" y="207.5" ></text>
+</g>
+<g >
+<title>__sqrt (352 samples, 0.18%)</title><rect x="899.8" y="197" width="2.2" height="15.0" fill="rgb(238,118,11)" rx="2" ry="2" />
+<text  x="902.84" y="207.5" ></text>
+</g>
+<g >
+<title>OneWayEamList::getEamItemByType(unsigned short)&lt;00000000004a4d74&gt; (817 samples, 0.42%)</title><rect x="1124.7" y="197" width="5.0" height="15.0" fill="rgb(253,81,15)" rx="2" ry="2" />
+<text  x="1127.74" y="207.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long const, AtomElement*&gt;&amp; std::forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::remove_reference&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;::type&amp;) (270 samples, 0.14%)</title><rect x="189.0" y="117" width="1.6" height="15.0" fill="rgb(236,55,32)" rx="2" ry="2" />
+<text  x="191.99" y="127.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (549 samples, 0.28%)</title><rect x="878.6" y="213" width="3.3" height="15.0" fill="rgb(206,6,5)" rx="2" ry="2" />
+<text  x="881.60" y="223.5" ></text>
+</g>
+<g >
+<title>InterBorderPacker::onReceive(LatParticleData*, unsigned long, int, int)&lt;000000000045e82a&gt; (483 samples, 0.25%)</title><rect x="12.1" y="213" width="2.9" height="15.0" fill="rgb(251,90,6)" rx="2" ry="2" />
+<text  x="15.08" y="223.5" ></text>
+</g>
+<g >
+<title>_init&lt;0000000000406908&gt; (37 samples, 0.02%)</title><rect x="187.1" y="133" width="0.2" height="15.0" fill="rgb(240,144,12)" rx="2" ry="2" />
+<text  x="190.11" y="143.5" ></text>
+</g>
+<g >
+<title>simulation::simulate()&lt;0000000000452e64&gt; (194,356 samples, 99.94%)</title><rect x="10.8" y="261" width="1179.2" height="15.0" fill="rgb(254,48,29)" rx="2" ry="2" />
+<text  x="13.75" y="271.5" >simulation::simulate()&lt;0000000000452e64&gt;</text>
+</g>
+<g >
+<title>std::vector&lt;long, std::allocator&lt;long&gt; &gt;::end() (353 samples, 0.18%)</title><rect x="1133.9" y="213" width="2.2" height="15.0" fill="rgb(215,164,40)" rx="2" ry="2" />
+<text  x="1136.92" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (24 samples, 0.01%)</title><rect x="778.5" y="101" width="0.1" height="15.0" fill="rgb(221,143,4)" rx="2" ry="2" />
+<text  x="781.46" y="111.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_bucket_index(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; const*, unsigned long) const (8,672 samples, 4.46%)</title><rect x="723.1" y="165" width="52.6" height="15.0" fill="rgb(216,50,7)" rx="2" ry="2" />
+<text  x="726.13" y="175.5" >std::..</text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;1, std::hash&lt;long&gt;, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;1, std::hash&lt;long&gt;, true&gt; const&amp;) (17 samples, 0.01%)</title><rect x="780.6" y="149" width="0.1" height="15.0" fill="rgb(227,10,30)" rx="2" ry="2" />
+<text  x="783.63" y="159.5" ></text>
+</g>
+<g >
+<title>InterBorderPacker::sendLength(int, int)&lt;000000000045e290&gt; (16,059 samples, 8.26%)</title><rect x="17.1" y="213" width="97.5" height="15.0" fill="rgb(224,130,52)" rx="2" ry="2" />
+<text  x="20.12" y="223.5" >InterBorder..</text>
+</g>
+<g >
+<title>void std::allocator_traits&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::destroy&lt;std::pair&lt;long const, AtomElement*&gt; &gt;(std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;&amp;, std::pair&lt;long const, AtomElement*&gt;*) (297 samples, 0.15%)</title><rect x="522.7" y="149" width="1.8" height="15.0" fill="rgb(216,32,23)" rx="2" ry="2" />
+<text  x="525.74" y="159.5" ></text>
+</g>
+<g >
+<title>MPID_nem_lmt_shm_progress&lt;000000000016ed90&gt; (99 samples, 0.05%)</title><rect x="115.7" y="165" width="0.6" height="15.0" fill="rgb(237,2,13)" rx="2" ry="2" />
+<text  x="118.71" y="175.5" ></text>
+</g>
+<g >
+<title>MPID_nem_lmt_shm_progress&lt;000000000016ed90&gt; (18 samples, 0.01%)</title><rect x="11.5" y="165" width="0.1" height="15.0" fill="rgb(247,101,35)" rx="2" ry="2" />
+<text  x="14.46" y="175.5" ></text>
+</g>
+<g >
+<title>std::tuple_element&lt;0ul, std::pair&lt;long const, AtomElement*&gt; &gt;::type&amp; std::get&lt;0ul, long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (422 samples, 0.22%)</title><rect x="190.6" y="117" width="2.6" height="15.0" fill="rgb(215,198,23)" rx="2" ry="2" />
+<text  x="193.63" y="127.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::operator++(int) (26 samples, 0.01%)</title><rect x="882.0" y="213" width="0.2" height="15.0" fill="rgb(224,131,12)" rx="2" ry="2" />
+<text  x="885.02" y="223.5" ></text>
+</g>
+<g >
+<title>eam::toForce(unsigned short, unsigned short, double, double)&lt;00000000004a18c8&gt; (3,386 samples, 1.74%)</title><rect x="661.0" y="213" width="20.5" height="15.0" fill="rgb(254,20,23)" rx="2" ry="2" />
+<text  x="663.98" y="223.5" ></text>
+</g>
+<g >
+<title>PMPI_Probe (237 samples, 0.12%)</title><rect x="116.4" y="213" width="1.4" height="15.0" fill="rgb(238,85,11)" rx="2" ry="2" />
+<text  x="119.38" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h2() const (41 samples, 0.02%)</title><rect x="721.0" y="149" width="0.3" height="15.0" fill="rgb(227,189,43)" rx="2" ry="2" />
+<text  x="724.02" y="159.5" ></text>
+</g>
+<g >
+<title>std::tuple_element&lt;0ul, std::pair&lt;long const, AtomElement*&gt; &gt;::type&amp; std::get&lt;0ul, long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (24 samples, 0.01%)</title><rect x="986.8" y="101" width="0.1" height="15.0" fill="rgb(251,77,45)" rx="2" ry="2" />
+<text  x="989.78" y="111.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (27 samples, 0.01%)</title><rect x="10.8" y="181" width="0.2" height="15.0" fill="rgb(250,134,20)" rx="2" ry="2" />
+<text  x="13.80" y="191.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (17 samples, 0.01%)</title><rect x="1164.0" y="165" width="0.2" height="15.0" fill="rgb(214,194,48)" rx="2" ry="2" />
+<text  x="1167.05" y="175.5" ></text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::operator++() (1,226 samples, 0.63%)</title><rect x="106.7" y="181" width="7.4" height="15.0" fill="rgb(230,142,37)" rx="2" ry="2" />
+<text  x="109.68" y="191.5" ></text>
+</g>
+<g >
+<title>__sqrt (208 samples, 0.11%)</title><rect x="1129.7" y="197" width="1.3" height="15.0" fill="rgb(243,190,48)" rx="2" ry="2" />
+<text  x="1132.70" y="207.5" ></text>
+</g>
+<g >
+<title>atom_type::getTypeIdByType(atom_type::atom_type)&lt;0000000000466a2f&gt; (150 samples, 0.08%)</title><rect x="658.8" y="213" width="1.0" height="15.0" fill="rgb(252,179,51)" rx="2" ry="2" />
+<text  x="661.84" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;* std::__detail::_Hashtable_alloc&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::_M_allocate_node&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::pair&lt;long, AtomElement*&gt;&amp;&amp;) (18,981 samples, 9.76%)</title><rect x="283.3" y="149" width="115.2" height="15.0" fill="rgb(240,14,26)" rx="2" ry="2" />
+<text  x="286.31" y="159.5" >std::__detail:..</text>
+</g>
+<g >
+<title>pack::unpack_recv(int, int, int, AtomList&amp;, LatParticleData*, std::vector&lt;std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;, std::allocator&lt;std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt; &gt; &gt;&amp;)&lt;0000000000461a37&gt; (38 samples, 0.02%)</title><rect x="10.8" y="197" width="0.2" height="15.0" fill="rgb(237,44,49)" rx="2" ry="2" />
+<text  x="13.75" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (184 samples, 0.09%)</title><rect x="996.0" y="133" width="1.1" height="15.0" fill="rgb(216,206,51)" rx="2" ry="2" />
+<text  x="998.96" y="143.5" ></text>
+</g>
+<g >
+<title>eam::rhoContribution(unsigned short, double)&lt;00000000004a1ce4&gt; (3,465 samples, 1.78%)</title><rect x="1112.9" y="213" width="21.0" height="15.0" fill="rgb(246,177,32)" rx="2" ry="2" />
+<text  x="1115.86" y="223.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (187 samples, 0.10%)</title><rect x="234.9" y="37" width="1.1" height="15.0" fill="rgb(214,35,49)" rx="2" ry="2" />
+<text  x="237.87" y="47.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) const (458 samples, 0.24%)</title><rect x="992.5" y="149" width="2.8" height="15.0" fill="rgb(230,32,38)" rx="2" ry="2" />
+<text  x="995.54" y="159.5" ></text>
+</g>
+<g >
+<title>void comm::neiSendReceive&lt;LatParticleData&gt;(Packer&lt;LatParticleData&gt;*, comm::mpi_process, int, int const (&amp;) [3][2]) (17,434 samples, 8.96%)</title><rect x="12.1" y="229" width="105.7" height="15.0" fill="rgb(237,100,11)" rx="2" ry="2" />
+<text  x="15.06" y="239.5" >void comm::n..</text>
+</g>
+<g >
+<title>pack::pack_force(int, AtomList&amp;, double*, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;&amp;)&lt;000000000046276a&gt; (35 samples, 0.02%)</title><rect x="1164.0" y="181" width="0.2" height="15.0" fill="rgb(207,139,26)" rx="2" ry="2" />
+<text  x="1166.95" y="191.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_membuf&lt;AtomElement&gt;::_M_addr() (536 samples, 0.28%)</title><rect x="696.4" y="165" width="3.3" height="15.0" fill="rgb(213,8,50)" rx="2" ry="2" />
+<text  x="699.43" y="175.5" ></text>
+</g>
+<g >
+<title>NewtonMotion::computeSecond(AtomList*, InterAtomList*)::{lambda(AtomElement&amp;)#1}::operator()(AtomElement&amp;) const (24 samples, 0.01%)</title><rect x="118.7" y="197" width="0.1" height="15.0" fill="rgb(232,5,1)" rx="2" ry="2" />
+<text  x="121.69" y="207.5" ></text>
+</g>
+<g >
+<title>atom_type::getTypeIdByType(atom_type::atom_type)&lt;0000000000466a2f&gt; (162 samples, 0.08%)</title><rect x="882.2" y="213" width="1.0" height="15.0" fill="rgb(235,218,0)" rx="2" ry="2" />
+<text  x="885.17" y="223.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;KeyDb, EamPhi&gt;::get(KeyDb) (424 samples, 0.22%)</title><rect x="672.5" y="181" width="2.5" height="15.0" fill="rgb(223,220,28)" rx="2" ry="2" />
+<text  x="675.46" y="191.5" ></text>
+</g>
+<g >
+<title>ForcePacker::onSend(double*, unsigned long, int, int)&lt;00000000004698a6&gt; (35 samples, 0.02%)</title><rect x="1164.0" y="197" width="0.2" height="15.0" fill="rgb(229,88,42)" rx="2" ry="2" />
+<text  x="1166.95" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::equal_to&lt;long&gt;, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;0, std::equal_to&lt;long&gt;, true&gt; const&amp;) (59 samples, 0.03%)</title><rect x="792.1" y="149" width="0.4" height="15.0" fill="rgb(233,154,19)" rx="2" ry="2" />
+<text  x="795.11" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::equal_to&lt;long&gt;, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;0, std::equal_to&lt;long&gt;, true&gt; const&amp;) (97 samples, 0.05%)</title><rect x="245.3" y="85" width="0.6" height="15.0" fill="rgb(241,157,28)" rx="2" ry="2" />
+<text  x="248.33" y="95.5" ></text>
+</g>
+<g >
+<title>MPIDI_CH3_RecvFromSelf&lt;0000000000114fe0&gt; (62 samples, 0.03%)</title><rect x="115.2" y="181" width="0.4" height="15.0" fill="rgb(242,52,2)" rx="2" ry="2" />
+<text  x="118.19" y="191.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (199 samples, 0.10%)</title><rect x="403.8" y="101" width="1.2" height="15.0" fill="rgb(217,220,43)" rx="2" ry="2" />
+<text  x="406.80" y="111.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::new_allocator&lt;std::_List_node&lt;AtomElement&gt; &gt;::allocate(unsigned long, void const*) (212 samples, 0.11%)</title><rect x="13.3" y="117" width="1.3" height="15.0" fill="rgb(236,149,46)" rx="2" ry="2" />
+<text  x="16.31" y="127.5" ></text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::operator++(int) (1,949 samples, 1.00%)</title><rect x="137.6" y="213" width="11.8" height="15.0" fill="rgb(235,182,33)" rx="2" ry="2" />
+<text  x="140.59" y="223.5" ></text>
+</g>
+<g >
+<title>std::unordered_multimap&lt;long, AtomElement*, std::hash&lt;long&gt;, std::equal_to&lt;long&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt; &gt;::equal_range(long const&amp;) (12,481 samples, 6.42%)</title><rect x="926.7" y="213" width="75.7" height="15.0" fill="rgb(227,106,42)" rx="2" ry="2" />
+<text  x="929.69" y="223.5" >std::uno..</text>
+</g>
+<g >
+<title>std::unordered_multimap&lt;long, AtomElement*, std::hash&lt;long&gt;, std::equal_to&lt;long&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt; &gt;::equal_range(long const&amp;) (12,533 samples, 6.44%)</title><rect x="717.9" y="213" width="76.0" height="15.0" fill="rgb(228,156,49)" rx="2" ry="2" />
+<text  x="720.88" y="223.5" >std::uno..</text>
+</g>
+<g >
+<title>AtomElement::isInterElement() const&lt;0000000000466a72&gt; (338 samples, 0.17%)</title><rect x="876.5" y="213" width="2.1" height="15.0" fill="rgb(216,90,18)" rx="2" ry="2" />
+<text  x="879.55" y="223.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;long, std::allocator&lt;long&gt; &gt;::end() (56 samples, 0.03%)</title><rect x="793.9" y="213" width="0.4" height="15.0" fill="rgb(234,162,23)" rx="2" ry="2" />
+<text  x="796.92" y="223.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (996 samples, 0.51%)</title><rect x="711.8" y="181" width="6.1" height="15.0" fill="rgb(214,206,32)" rx="2" ry="2" />
+<text  x="714.84" y="191.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (60 samples, 0.03%)</title><rect x="788.3" y="101" width="0.3" height="15.0" fill="rgb(251,199,38)" rx="2" ry="2" />
+<text  x="791.29" y="111.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;KeyDb, EamPhi&gt;::index(KeyDb) (313 samples, 0.16%)</title><rect x="1060.8" y="165" width="1.9" height="15.0" fill="rgb(210,162,45)" rx="2" ry="2" />
+<text  x="1063.84" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_bucket_index(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; const*, unsigned long) const (140 samples, 0.07%)</title><rect x="246.2" y="101" width="0.8" height="15.0" fill="rgb(227,183,23)" rx="2" ry="2" />
+<text  x="249.18" y="111.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (112 samples, 0.06%)</title><rect x="292.8" y="101" width="0.7" height="15.0" fill="rgb(246,157,11)" rx="2" ry="2" />
+<text  x="295.79" y="111.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt; const&amp;) (125 samples, 0.06%)</title><rect x="764.2" y="133" width="0.8" height="15.0" fill="rgb(245,223,16)" rx="2" ry="2" />
+<text  x="767.19" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_M_next() const (231 samples, 0.12%)</title><rect x="780.9" y="181" width="1.4" height="15.0" fill="rgb(208,127,13)" rx="2" ry="2" />
+<text  x="783.86" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (1,105 samples, 0.57%)</title><rect x="920.0" y="197" width="6.7" height="15.0" fill="rgb(222,183,38)" rx="2" ry="2" />
+<text  x="922.99" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_extract() (203 samples, 0.10%)</title><rect x="249.2" y="133" width="1.2" height="15.0" fill="rgb(225,168,0)" rx="2" ry="2" />
+<text  x="252.20" y="143.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (130 samples, 0.07%)</title><rect x="787.9" y="117" width="0.7" height="15.0" fill="rgb(207,168,53)" rx="2" ry="2" />
+<text  x="790.86" y="127.5" ></text>
+</g>
+<g >
+<title>long const&amp; std::__pair_get&lt;0ul&gt;::__const_get&lt;long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt; const&amp;) (87 samples, 0.04%)</title><rect x="762.8" y="117" width="0.5" height="15.0" fill="rgb(247,8,31)" rx="2" ry="2" />
+<text  x="765.80" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (689 samples, 0.35%)</title><rect x="252.6" y="117" width="4.2" height="15.0" fill="rgb(219,4,37)" rx="2" ry="2" />
+<text  x="255.63" y="127.5" ></text>
+</g>
+<g >
+<title>void __gnu_cxx::new_allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;::destroy&lt;std::pair&lt;long const, AtomElement*&gt; &gt;(std::pair&lt;long const, AtomElement*&gt;*) (108 samples, 0.06%)</title><rect x="523.9" y="133" width="0.6" height="15.0" fill="rgb(252,52,29)" rx="2" ry="2" />
+<text  x="526.89" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; std::__detail::_Insert&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt;, false&gt;::insert&lt;std::pair&lt;long, AtomElement*&gt;, void&gt;(std::pair&lt;long, AtomElement*&gt;&amp;&amp;) (42,023 samples, 21.61%)</title><rect x="152.9" y="197" width="254.9" height="15.0" fill="rgb(215,172,34)" rx="2" ry="2" />
+<text  x="155.87" y="207.5" >std::__detail::_Node_iterator&lt;std:..</text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::base() const (140 samples, 0.07%)</title><rect x="1045.6" y="197" width="0.9" height="15.0" fill="rgb(210,45,31)" rx="2" ry="2" />
+<text  x="1048.63" y="207.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_find_before_node(unsigned long, long const&amp;, unsigned long) const (6,333 samples, 3.26%)</title><rect x="207.5" y="133" width="38.4" height="15.0" fill="rgb(225,223,30)" rx="2" ry="2" />
+<text  x="210.49" y="143.5" >std..</text>
+</g>
+<g >
+<title>all (194,480 samples, 100%)</title><rect x="10.0" y="373" width="1180.0" height="15.0" fill="rgb(245,201,30)" rx="2" ry="2" />
+<text  x="13.00" y="383.5" ></text>
+</g>
+<g >
+<title>AtomList::exchangeAtom(comm::Domain*)&lt;00000000004568e4&gt; (215 samples, 0.11%)</title><rect x="10.8" y="245" width="1.3" height="15.0" fill="rgb(215,114,27)" rx="2" ry="2" />
+<text  x="13.75" y="255.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;2, std::__detail::_Mod_range_hashing, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;2, std::__detail::_Mod_range_hashing, true&gt; const&amp;) (159 samples, 0.08%)</title><rect x="198.1" y="85" width="0.9" height="15.0" fill="rgb(208,186,19)" rx="2" ry="2" />
+<text  x="201.07" y="95.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;unsigned short, OneWayEam&gt;::index(unsigned short) (266 samples, 0.14%)</title><rect x="677.3" y="165" width="1.6" height="15.0" fill="rgb(242,194,39)" rx="2" ry="2" />
+<text  x="680.31" y="175.5" ></text>
+</g>
+<g >
+<title>atom::latRho(eam*, comm::Domain*, double&amp;)&lt;0000000000463bec&gt; (10,620 samples, 5.46%)</title><rect x="1071.6" y="229" width="64.5" height="15.0" fill="rgb(205,48,4)" rx="2" ry="2" />
+<text  x="1074.62" y="239.5" >atom::l..</text>
+</g>
+<g >
+<title>MPI_Irecv (24 samples, 0.01%)</title><rect x="11.3" y="213" width="0.1" height="15.0" fill="rgb(235,13,2)" rx="2" ry="2" />
+<text  x="14.29" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_equals(long const&amp;, unsigned long, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) const (231 samples, 0.12%)</title><rect x="986.5" y="149" width="1.4" height="15.0" fill="rgb(229,106,27)" rx="2" ry="2" />
+<text  x="989.52" y="159.5" ></text>
+</g>
+<g >
+<title>operator new(unsigned long, void*)&lt;00000000004084ff&gt; (85 samples, 0.04%)</title><rect x="287.3" y="133" width="0.6" height="15.0" fill="rgb(206,160,26)" rx="2" ry="2" />
+<text  x="290.35" y="143.5" ></text>
+</g>
+<g >
+<title>MPID_nem_network_poll&lt;000000000016ada0&gt; (692 samples, 0.36%)</title><rect x="1174.9" y="149" width="4.2" height="15.0" fill="rgb(235,185,18)" rx="2" ry="2" />
+<text  x="1177.90" y="159.5" ></text>
+</g>
+<g >
+<title>MPID_nem_network_poll&lt;000000000016ada0&gt; (38 samples, 0.02%)</title><rect x="117.0" y="165" width="0.2" height="15.0" fill="rgb(218,114,1)" rx="2" ry="2" />
+<text  x="120.02" y="175.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long, AtomElement*&gt;&amp;&amp; std::forward&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::remove_reference&lt;std::pair&lt;long, AtomElement*&gt; &gt;::type&amp;) (169 samples, 0.09%)</title><rect x="405.0" y="149" width="1.0" height="15.0" fill="rgb(249,151,26)" rx="2" ry="2" />
+<text  x="408.01" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;, true&gt;::_S_get(std::__detail::_Hashtable_ebo_helper&lt;0, std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;, true&gt;&amp;) (253 samples, 0.13%)</title><rect x="483.2" y="133" width="1.5" height="15.0" fill="rgb(228,43,13)" rx="2" ry="2" />
+<text  x="486.18" y="143.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_bucket_index(long const&amp;, unsigned long) const (259 samples, 0.13%)</title><rect x="929.5" y="181" width="1.6" height="15.0" fill="rgb(222,159,24)" rx="2" ry="2" />
+<text  x="932.49" y="191.5" ></text>
+</g>
+<g >
+<title>void comm::neiSendReceive&lt;double, 1275070475&gt;(Packer&lt;double&gt;*, comm::mpi_process, int const (&amp;) [3][2]) (4,346 samples, 2.23%)</title><rect x="1163.6" y="229" width="26.3" height="15.0" fill="rgb(222,149,40)" rx="2" ry="2" />
+<text  x="1166.56" y="239.5" >v..</text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_find_before_node(unsigned long, long const&amp;, unsigned long) const (588 samples, 0.30%)</title><rect x="984.3" y="165" width="3.6" height="15.0" fill="rgb(228,22,3)" rx="2" ry="2" />
+<text  x="987.35" y="175.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::_M_find_node(unsigned long, long const&amp;, unsigned long) const (635 samples, 0.33%)</title><rect x="984.1" y="181" width="3.8" height="15.0" fill="rgb(225,52,32)" rx="2" ry="2" />
+<text  x="987.06" y="191.5" ></text>
+</g>
+<g >
+<title>std::_List_node&lt;AtomElement&gt;::_M_valptr() (17 samples, 0.01%)</title><rect x="12.8" y="149" width="0.1" height="15.0" fill="rgb(215,174,25)" rx="2" ry="2" />
+<text  x="15.83" y="159.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (25 samples, 0.01%)</title><rect x="1162.5" y="165" width="0.2" height="15.0" fill="rgb(217,194,0)" rx="2" ry="2" />
+<text  x="1165.50" y="175.5" ></text>
+</g>
+<g >
+<title>MPID_nem_lmt_RndvRecv&lt;000000000016c3c0&gt; (24 samples, 0.01%)</title><rect x="115.6" y="181" width="0.1" height="15.0" fill="rgb(206,0,18)" rx="2" ry="2" />
+<text  x="118.56" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp; std::forward&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;(std::remove_reference&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::type&amp;) (23 samples, 0.01%)</title><rect x="793.8" y="149" width="0.1" height="15.0" fill="rgb(244,220,45)" rx="2" ry="2" />
+<text  x="796.78" y="159.5" ></text>
+</g>
+<g >
+<title>void AtomList::foreachSubBoxAtom&lt;NewtonMotion::computeFirst(AtomList*, InterAtomList*)::{lambda(AtomElement&amp;)#1}&gt;(NewtonMotion::computeFirst(AtomList*, InterAtomList*)::{lambda(AtomElement&amp;)#1}) (31 samples, 0.02%)</title><rect x="118.5" y="213" width="0.1" height="15.0" fill="rgb(234,208,35)" rx="2" ry="2" />
+<text  x="121.46" y="223.5" ></text>
+</g>
+<g >
+<title>LatParticleData::LatParticleData() (103 samples, 0.05%)</title><rect x="114.6" y="213" width="0.6" height="15.0" fill="rgb(245,77,1)" rx="2" ry="2" />
+<text  x="117.55" y="223.5" ></text>
+</g>
+<g >
+<title>RhoPacker::onSend(double*, unsigned long, int, int)&lt;0000000000469a16&gt; (44 samples, 0.02%)</title><rect x="1162.7" y="197" width="0.2" height="15.0" fill="rgb(240,85,18)" rx="2" ry="2" />
+<text  x="1165.67" y="207.5" ></text>
+</g>
+<g >
+<title>std::unordered_multimap&lt;long, AtomElement*, std::hash&lt;long&gt;, std::equal_to&lt;long&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt; &gt;::clear() (17,524 samples, 9.01%)</title><rect x="418.2" y="213" width="106.3" height="15.0" fill="rgb(249,0,39)" rx="2" ry="2" />
+<text  x="421.22" y="223.5" >std::unordere..</text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h2() const (30 samples, 0.02%)</title><rect x="929.9" y="149" width="0.2" height="15.0" fill="rgb(233,226,31)" rx="2" ry="2" />
+<text  x="932.88" y="159.5" ></text>
+</g>
+<g >
+<title>KeyDb::operator==(KeyDb const&amp;) const&lt;00000000004a5406&gt; (129 samples, 0.07%)</title><rect x="1062.0" y="149" width="0.7" height="15.0" fill="rgb(218,0,10)" rx="2" ry="2" />
+<text  x="1064.96" y="159.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long const, AtomElement*&gt;&amp; std::forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::remove_reference&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;::type&amp;) (47 samples, 0.02%)</title><rect x="993.9" y="133" width="0.3" height="15.0" fill="rgb(211,183,35)" rx="2" ry="2" />
+<text  x="996.94" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Prime_rehash_policy::_M_state() const&lt;00000000004087f4&gt; (419 samples, 0.22%)</title><rect x="259.9" y="133" width="2.6" height="15.0" fill="rgb(253,110,42)" rx="2" ry="2" />
+<text  x="262.93" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() const (444 samples, 0.23%)</title><rect x="767.3" y="133" width="2.7" height="15.0" fill="rgb(210,56,32)" rx="2" ry="2" />
+<text  x="770.31" y="143.5" ></text>
+</g>
+<g >
+<title>MPID_Probe&lt;00000000001531e0&gt; (4,240 samples, 2.18%)</title><rect x="1164.2" y="181" width="25.7" height="15.0" fill="rgb(223,153,37)" rx="2" ry="2" />
+<text  x="1167.20" y="191.5" >M..</text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_membuf&lt;AtomElement&gt;::_M_addr() (893 samples, 0.46%)</title><rect x="101.3" y="133" width="5.4" height="15.0" fill="rgb(244,27,29)" rx="2" ry="2" />
+<text  x="104.26" y="143.5" ></text>
+</g>
+<g >
+<title>long const&amp; std::__pair_get&lt;0ul&gt;::__get&lt;long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (72 samples, 0.04%)</title><rect x="786.5" y="117" width="0.5" height="15.0" fill="rgb(220,162,54)" rx="2" ry="2" />
+<text  x="789.54" y="127.5" ></text>
+</g>
+<g >
+<title>void __gnu_cxx::new_allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;::construct&lt;std::pair&lt;long const, AtomElement*&gt;, std::pair&lt;long, AtomElement*&gt; &gt;(std::pair&lt;long const, AtomElement*&gt;*, std::pair&lt;long, AtomElement*&gt;&amp;&amp;) (1,723 samples, 0.89%)</title><rect x="388.0" y="117" width="10.5" height="15.0" fill="rgb(205,182,46)" rx="2" ry="2" />
+<text  x="391.03" y="127.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long, AtomElement*&gt;&amp;&amp; std::forward&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::remove_reference&lt;std::pair&lt;long, AtomElement*&gt; &gt;::type&amp;) (223 samples, 0.11%)</title><rect x="397.1" y="101" width="1.4" height="15.0" fill="rgb(249,129,1)" rx="2" ry="2" />
+<text  x="400.13" y="111.5" ></text>
+</g>
+<g >
+<title>__GI___poll (213 samples, 0.11%)</title><rect x="1184.0" y="133" width="1.3" height="15.0" fill="rgb(243,56,47)" rx="2" ry="2" />
+<text  x="1186.99" y="143.5" ></text>
+</g>
+<g >
+<title>MPID_nem_tcp_connpoll&lt;0000000000176540&gt; (20 samples, 0.01%)</title><rect x="11.8" y="165" width="0.1" height="15.0" fill="rgb(218,97,41)" rx="2" ry="2" />
+<text  x="14.80" y="175.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::end() (122 samples, 0.06%)</title><rect x="987.9" y="181" width="0.8" height="15.0" fill="rgb(251,26,25)" rx="2" ry="2" />
+<text  x="990.92" y="191.5" ></text>
+</g>
+<g >
+<title>std::__cxx11::_List_base&lt;AtomElement, std::allocator&lt;AtomElement&gt; &gt;::_M_get_node() (235 samples, 0.12%)</title><rect x="13.2" y="149" width="1.4" height="15.0" fill="rgb(235,41,13)" rx="2" ry="2" />
+<text  x="16.17" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_bucket_index(long const&amp;, unsigned long, unsigned long) const (250 samples, 0.13%)</title><rect x="720.8" y="165" width="1.5" height="15.0" fill="rgb(251,55,40)" rx="2" ry="2" />
+<text  x="723.80" y="175.5" ></text>
+</g>
+<g >
+<title>pack::pack_rho(int, AtomList&amp;, double*, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;&amp;)&lt;0000000000461fcc&gt; (44 samples, 0.02%)</title><rect x="1162.7" y="181" width="0.2" height="15.0" fill="rgb(213,89,32)" rx="2" ry="2" />
+<text  x="1165.67" y="191.5" ></text>
+</g>
+<g >
+<title>decltype ((get&lt;0&gt;)((forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;)({parm#1}))) std::__detail::_Select1st::operator()&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) const (992 samples, 0.51%)</title><rect x="225.7" y="85" width="6.0" height="15.0" fill="rgb(252,109,3)" rx="2" ry="2" />
+<text  x="228.72" y="95.5" ></text>
+</g>
+<g >
+<title>pack::pack_send(int, int, double const*, AtomList&amp;, LatParticleData*, std::vector&lt;unsigned long, std::allocator&lt;unsigned long&gt; &gt;&amp;)&lt;0000000000461282&gt; (36 samples, 0.02%)</title><rect x="11.0" y="197" width="0.2" height="15.0" fill="rgb(218,20,25)" rx="2" ry="2" />
+<text  x="13.99" y="207.5" ></text>
+</g>
+<g >
+<title>long const&amp; std::__pair_get&lt;0ul&gt;::__get&lt;long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (215 samples, 0.11%)</title><rect x="174.0" y="117" width="1.3" height="15.0" fill="rgb(238,216,0)" rx="2" ry="2" />
+<text  x="176.97" y="127.5" ></text>
+</g>
+<g >
+<title>KeyDb::KeyDb(unsigned short, unsigned short)&lt;00000000004a53b4&gt; (112 samples, 0.06%)</title><rect x="1062.7" y="181" width="0.7" height="15.0" fill="rgb(238,83,12)" rx="2" ry="2" />
+<text  x="1065.74" y="191.5" ></text>
+</g>
+<g >
+<title>std::__cxx11::list&lt;AtomElement, std::allocator&lt;AtomElement&gt; &gt;::push_back(AtomElement const&amp;) (413 samples, 0.21%)</title><rect x="12.4" y="197" width="2.5" height="15.0" fill="rgb(224,98,44)" rx="2" ry="2" />
+<text  x="15.42" y="207.5" ></text>
+</g>
+<g >
+<title>InterAtomList::makeIndex(AtomList*, comm::Domain const*)&lt;000000000045b300&gt; (73,254 samples, 37.67%)</title><rect x="119.2" y="229" width="444.4" height="15.0" fill="rgb(250,201,50)" rx="2" ry="2" />
+<text  x="122.17" y="239.5" >InterAtomList::makeIndex(AtomList*, comm::Domain const*)&lt;000..</text>
+</g>
+<g >
+<title>operator new(unsigned long, void*)&lt;00000000004084ff&gt; (132 samples, 0.07%)</title><rect x="390.4" y="101" width="0.8" height="15.0" fill="rgb(243,104,25)" rx="2" ry="2" />
+<text  x="393.38" y="111.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::operator*() const (105 samples, 0.05%)</title><rect x="1106.5" y="213" width="0.6" height="15.0" fill="rgb(228,207,5)" rx="2" ry="2" />
+<text  x="1109.48" y="223.5" ></text>
+</g>
+<g >
+<title>lmt_shm_send_progress&lt;000000000016c9c0&gt; (18 samples, 0.01%)</title><rect x="115.6" y="133" width="0.1" height="15.0" fill="rgb(234,200,22)" rx="2" ry="2" />
+<text  x="118.60" y="143.5" ></text>
+</g>
+<g >
+<title>InterBorderPacker::getIntertosend(comm::Domain const*, int, int, double, std::vector&lt;AtomElement*, std::allocator&lt;AtomElement*&gt; &gt;&amp;)&lt;000000000045ea92&gt; (16,058 samples, 8.26%)</title><rect x="17.1" y="197" width="97.4" height="15.0" fill="rgb(241,198,13)" rx="2" ry="2" />
+<text  x="20.12" y="207.5" >InterBorder..</text>
+</g>
+<g >
+<title>_int_malloc&lt;00000000000820e0&gt; (176 samples, 0.09%)</title><rect x="13.5" y="69" width="1.1" height="15.0" fill="rgb(215,77,15)" rx="2" ry="2" />
+<text  x="16.53" y="79.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::operator*() const (71 samples, 0.04%)</title><rect x="1040.3" y="213" width="0.5" height="15.0" fill="rgb(217,171,32)" rx="2" ry="2" />
+<text  x="1043.33" y="223.5" ></text>
+</g>
+<g >
+<title>eam::rhoContribution(unsigned short, double)&lt;00000000004a1ce4&gt; (3,324 samples, 1.71%)</title><rect x="884.1" y="213" width="20.2" height="15.0" fill="rgb(219,37,53)" rx="2" ry="2" />
+<text  x="887.13" y="223.5" ></text>
+</g>
+<g >
+<title>bool __gnu_cxx::operator!=&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;(__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt; const&amp;, __gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt; const&amp;) (359 samples, 0.18%)</title><rect x="1044.3" y="213" width="2.2" height="15.0" fill="rgb(249,196,4)" rx="2" ry="2" />
+<text  x="1047.30" y="223.5" ></text>
+</g>
+<g >
+<title>std::hash&lt;long&gt;::operator()(long) const (23 samples, 0.01%)</title><rect x="989.0" y="165" width="0.1" height="15.0" fill="rgb(213,106,46)" rx="2" ry="2" />
+<text  x="992.00" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (522 samples, 0.27%)</title><rect x="232.8" y="69" width="3.2" height="15.0" fill="rgb(240,43,45)" rx="2" ry="2" />
+<text  x="235.83" y="79.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (343 samples, 0.18%)</title><rect x="478.8" y="149" width="2.1" height="15.0" fill="rgb(244,216,6)" rx="2" ry="2" />
+<text  x="481.81" y="159.5" ></text>
+</g>
+<g >
+<title>atom::latForce(eam*, comm::Domain*, double&amp;)&lt;0000000000464c10&gt; (11,235 samples, 5.78%)</title><rect x="1003.5" y="229" width="68.1" height="15.0" fill="rgb(227,98,3)" rx="2" ry="2" />
+<text  x="1006.46" y="239.5" >atom::l..</text>
+</g>
+<g >
+<title>PMPI_Probe (4,240 samples, 2.18%)</title><rect x="1164.2" y="197" width="25.7" height="15.0" fill="rgb(222,31,22)" rx="2" ry="2" />
+<text  x="1167.20" y="207.5" >P..</text>
+</g>
+<g >
+<title>LatPacker::onSend(LatParticleData*, unsigned long, int, int)&lt;000000000046118e&gt; (37 samples, 0.02%)</title><rect x="11.0" y="213" width="0.2" height="15.0" fill="rgb(236,72,30)" rx="2" ry="2" />
+<text  x="13.98" y="223.5" ></text>
+</g>
+<g >
+<title>AtomList::getAtomEleByLinearIndex(long)&lt;0000000000459cf0&gt; (41 samples, 0.02%)</title><rect x="118.9" y="229" width="0.2" height="15.0" fill="rgb(206,110,49)" rx="2" ry="2" />
+<text  x="121.90" y="239.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long, AtomElement*&gt;&amp;&amp; std::forward&lt;std::pair&lt;long, AtomElement*&gt; &gt;(std::remove_reference&lt;std::pair&lt;long, AtomElement*&gt; &gt;::type&amp;) (97 samples, 0.05%)</title><rect x="407.3" y="181" width="0.5" height="15.0" fill="rgb(220,132,9)" rx="2" ry="2" />
+<text  x="410.25" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h2() const (93 samples, 0.05%)</title><rect x="765.8" y="149" width="0.6" height="15.0" fill="rgb(224,84,0)" rx="2" ry="2" />
+<text  x="768.79" y="159.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;2, std::__detail::_Mod_range_hashing, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;2, std::__detail::_Mod_range_hashing, true&gt; const&amp;) (24 samples, 0.01%)</title><rect x="721.1" y="133" width="0.2" height="15.0" fill="rgb(221,179,36)" rx="2" ry="2" />
+<text  x="724.12" y="143.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h1() const (140 samples, 0.07%)</title><rect x="973.3" y="149" width="0.8" height="15.0" fill="rgb(244,190,17)" rx="2" ry="2" />
+<text  x="976.26" y="159.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::equal_range(long const&amp;) (12,500 samples, 6.43%)</title><rect x="718.1" y="197" width="75.8" height="15.0" fill="rgb(209,1,44)" rx="2" ry="2" />
+<text  x="721.08" y="207.5" >std::_Ha..</text>
+</g>
+<g >
+<title>MPI_Wait (111 samples, 0.06%)</title><rect x="115.7" y="213" width="0.7" height="15.0" fill="rgb(242,138,24)" rx="2" ry="2" />
+<text  x="118.71" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;1, std::hash&lt;long&gt;, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;1, std::hash&lt;long&gt;, true&gt; const&amp;) (76 samples, 0.04%)</title><rect x="973.6" y="133" width="0.5" height="15.0" fill="rgb(218,51,14)" rx="2" ry="2" />
+<text  x="976.65" y="143.5" ></text>
+</g>
+<g >
+<title>std::_Hashtable&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::allocator&lt;std::pair&lt;long const, AtomElement*&gt; &gt;, std::__detail::_Select1st, std::equal_to&lt;long&gt;, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits&lt;false, false, false&gt; &gt;::cend() const (661 samples, 0.34%)</title><rect x="158.8" y="165" width="4.0" height="15.0" fill="rgb(213,226,53)" rx="2" ry="2" />
+<text  x="161.76" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;* std::__addressof&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;&amp;) (93 samples, 0.05%)</title><rect x="522.2" y="117" width="0.5" height="15.0" fill="rgb(213,185,7)" rx="2" ry="2" />
+<text  x="525.18" y="127.5" ></text>
+</g>
+<g >
+<title>std::allocator_traits&lt;std::allocator&lt;std::_List_node&lt;AtomElement&gt; &gt; &gt;::allocate(std::allocator&lt;std::_List_node&lt;AtomElement&gt; &gt;&amp;, unsigned long) (221 samples, 0.11%)</title><rect x="13.3" y="133" width="1.3" height="15.0" fill="rgb(241,60,21)" rx="2" ry="2" />
+<text  x="16.26" y="143.5" ></text>
+</g>
+<g >
+<title>kiwi::kiwiApp::run(int, char**)&lt;000000000048cef6&gt; (194,480 samples, 100.00%)</title><rect x="10.0" y="309" width="1180.0" height="15.0" fill="rgb(243,154,33)" rx="2" ry="2" />
+<text  x="13.00" y="319.5" >kiwi::kiwiApp::run(int, char**)&lt;000000000048cef6&gt;</text>
+</g>
+<g >
+<title>MPID_Probe&lt;00000000001531e0&gt; (80 samples, 0.04%)</title><rect x="11.6" y="197" width="0.5" height="15.0" fill="rgb(218,195,5)" rx="2" ry="2" />
+<text  x="14.57" y="207.5" ></text>
+</g>
+<g >
+<title>std::_List_node&lt;AtomElement&gt;::_M_valptr() (937 samples, 0.48%)</title><rect x="131.9" y="197" width="5.7" height="15.0" fill="rgb(254,221,16)" rx="2" ry="2" />
+<text  x="134.91" y="207.5" ></text>
+</g>
+<g >
+<title>bool __gnu_cxx::operator!=&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;(__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt; const&amp;, __gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt; const&amp;) (40 samples, 0.02%)</title><rect x="883.2" y="213" width="0.2" height="15.0" fill="rgb(223,107,42)" rx="2" ry="2" />
+<text  x="886.16" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() const (602 samples, 0.31%)</title><rect x="766.4" y="149" width="3.6" height="15.0" fill="rgb(238,51,17)" rx="2" ry="2" />
+<text  x="769.35" y="159.5" ></text>
+</g>
+<g >
+<title>long const&amp; std::__pair_get&lt;0ul&gt;::__get&lt;long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt;&amp;) (205 samples, 0.11%)</title><rect x="230.5" y="53" width="1.2" height="15.0" fill="rgb(217,55,44)" rx="2" ry="2" />
+<text  x="233.50" y="63.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_hash_code(long const&amp;) const (102 samples, 0.05%)</title><rect x="780.2" y="181" width="0.7" height="15.0" fill="rgb(215,203,51)" rx="2" ry="2" />
+<text  x="783.24" y="191.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::__normal_iterator(long* const&amp;) (125 samples, 0.06%)</title><rect x="1042.7" y="197" width="0.8" height="15.0" fill="rgb(216,133,18)" rx="2" ry="2" />
+<text  x="1045.70" y="207.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;long const, AtomElement*&gt;&amp; std::forward&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;(std::remove_reference&lt;std::pair&lt;long const, AtomElement*&gt;&amp;&gt;::type&amp;) (220 samples, 0.11%)</title><rect x="227.2" y="69" width="1.4" height="15.0" fill="rgb(222,54,41)" rx="2" ry="2" />
+<text  x="230.23" y="79.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;::_S_get(std::__detail::_Hashtable_ebo_helper&lt;0, std::__detail::_Select1st, true&gt;&amp;) (226 samples, 0.12%)</title><rect x="264.2" y="133" width="1.4" height="15.0" fill="rgb(247,122,29)" rx="2" ry="2" />
+<text  x="267.18" y="143.5" ></text>
+</g>
+<g >
+<title>std::hash&lt;long&gt;::operator()(long) const (2,021 samples, 1.04%)</title><rect x="271.1" y="133" width="12.2" height="15.0" fill="rgb(219,26,50)" rx="2" ry="2" />
+<text  x="274.05" y="143.5" ></text>
+</g>
+<g >
+<title>int const&amp; std::min&lt;int&gt;(int const&amp;, int const&amp;) (113 samples, 0.06%)</title><rect x="903.6" y="197" width="0.7" height="15.0" fill="rgb(227,97,28)" rx="2" ry="2" />
+<text  x="906.61" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hashtable_ebo_helper&lt;2, std::__detail::_Mod_range_hashing, true&gt;::_S_cget(std::__detail::_Hashtable_ebo_helper&lt;2, std::__detail::_Mod_range_hashing, true&gt; const&amp;) (36 samples, 0.02%)</title><rect x="974.6" y="133" width="0.2" height="15.0" fill="rgb(253,17,21)" rx="2" ry="2" />
+<text  x="977.57" y="143.5" ></text>
+</g>
+<g >
+<title>__sqrt (260 samples, 0.13%)</title><rect x="1066.4" y="197" width="1.5" height="15.0" fill="rgb(235,40,8)" rx="2" ry="2" />
+<text  x="1069.37" y="207.5" ></text>
+</g>
+<g >
+<title>void __gnu_cxx::new_allocator&lt;std::_List_node&lt;AtomElement&gt; &gt;::construct&lt;AtomElement, AtomElement const&amp;&gt;(AtomElement*, AtomElement const&amp;) (33 samples, 0.02%)</title><rect x="14.7" y="133" width="0.2" height="15.0" fill="rgb(215,184,28)" rx="2" ry="2" />
+<text  x="17.67" y="143.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::base() const (116 samples, 0.06%)</title><rect x="1112.2" y="197" width="0.7" height="15.0" fill="rgb(229,216,24)" rx="2" ry="2" />
+<text  x="1115.16" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt;&amp;&amp; std::forward&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;(std::remove_reference&lt;std::__detail::_Node_iterator&lt;std::pair&lt;long const, AtomElement*&gt;, false, false&gt; &gt;::type&amp;) (32 samples, 0.02%)</title><rect x="1001.7" y="165" width="0.2" height="15.0" fill="rgb(243,90,50)" rx="2" ry="2" />
+<text  x="1004.68" y="175.5" ></text>
+</g>
+<g >
+<title>atom::computeEam(eam*, comm::Domain*, double&amp;)&lt;0000000000463926&gt; (172,028 samples, 88.46%)</title><rect x="119.2" y="245" width="1043.7" height="15.0" fill="rgb(217,24,35)" rx="2" ry="2" />
+<text  x="122.17" y="255.5" >atom::computeEam(eam*, comm::Domain*, double&amp;)&lt;0000000000463926&gt;</text>
+</g>
+<g >
+<title>ForcePacker::onReceive(double*, unsigned long, int, int)&lt;000000000046992a&gt; (64 samples, 0.03%)</title><rect x="1163.6" y="197" width="0.4" height="15.0" fill="rgb(253,175,10)" rx="2" ry="2" />
+<text  x="1166.56" y="207.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h1() const (37 samples, 0.02%)</title><rect x="780.5" y="165" width="0.2" height="15.0" fill="rgb(250,189,44)" rx="2" ry="2" />
+<text  x="783.51" y="175.5" ></text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::operator!=(std::_List_iterator&lt;AtomElement&gt; const&amp;) const (224 samples, 0.12%)</title><rect x="128.1" y="213" width="1.4" height="15.0" fill="rgb(237,51,49)" rx="2" ry="2" />
+<text  x="131.15" y="223.5" ></text>
+</g>
+<g >
+<title>MPIDI_CH3I_Progress&lt;0000000000160d30&gt; (22 samples, 0.01%)</title><rect x="11.4" y="181" width="0.2" height="15.0" fill="rgb(211,214,42)" rx="2" ry="2" />
+<text  x="14.43" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_v() (702 samples, 0.36%)</title><rect x="231.7" y="85" width="4.3" height="15.0" fill="rgb(228,84,31)" rx="2" ry="2" />
+<text  x="234.74" y="95.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() (135 samples, 0.07%)</title><rect x="996.3" y="117" width="0.8" height="15.0" fill="rgb(228,145,37)" rx="2" ry="2" />
+<text  x="999.25" y="127.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_node_value_base&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_valptr() (749 samples, 0.39%)</title><rect x="400.5" y="133" width="4.5" height="15.0" fill="rgb(217,97,16)" rx="2" ry="2" />
+<text  x="403.47" y="143.5" ></text>
+</g>
+<g >
+<title>std::tuple_element&lt;0ul, std::pair&lt;long const, AtomElement*&gt; &gt;::type const&amp; std::get&lt;0ul, long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt; const&amp;) (262 samples, 0.13%)</title><rect x="970.0" y="133" width="1.6" height="15.0" fill="rgb(252,5,44)" rx="2" ry="2" />
+<text  x="973.02" y="143.5" ></text>
+</g>
+<g >
+<title>std::_List_iterator&lt;AtomElement&gt;::_List_iterator(std::__detail::_List_node_base*) (165 samples, 0.08%)</title><rect x="150.5" y="197" width="1.0" height="15.0" fill="rgb(251,28,35)" rx="2" ry="2" />
+<text  x="153.51" y="207.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_addr() (211 samples, 0.11%)</title><rect x="255.5" y="85" width="1.3" height="15.0" fill="rgb(240,92,35)" rx="2" ry="2" />
+<text  x="258.53" y="95.5" ></text>
+</g>
+<g >
+<title>std::_List_node&lt;AtomElement&gt;* std::__cxx11::list&lt;AtomElement, std::allocator&lt;AtomElement&gt; &gt;::_M_create_node&lt;AtomElement const&amp;&gt;(AtomElement const&amp;) (377 samples, 0.19%)</title><rect x="12.6" y="165" width="2.3" height="15.0" fill="rgb(207,27,54)" rx="2" ry="2" />
+<text  x="15.58" y="175.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Node_iterator_base&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;::_Node_iterator_base(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*) (21 samples, 0.01%)</title><rect x="1001.3" y="165" width="0.2" height="15.0" fill="rgb(252,162,36)" rx="2" ry="2" />
+<text  x="1004.33" y="175.5" ></text>
+</g>
+<g >
+<title>std::tuple_element&lt;0ul, std::pair&lt;long const, AtomElement*&gt; &gt;::type const&amp; std::get&lt;0ul, long const, AtomElement*&gt;(std::pair&lt;long const, AtomElement*&gt; const&amp;) (198 samples, 0.10%)</title><rect x="762.1" y="133" width="1.2" height="15.0" fill="rgb(235,171,14)" rx="2" ry="2" />
+<text  x="765.13" y="143.5" ></text>
+</g>
+<g >
+<title>void comm::neiSendReceive&lt;double&gt;(Packer&lt;double&gt;*, comm::mpi_process, int, int const (&amp;) [3][2]) (4,430 samples, 2.28%)</title><rect x="1136.1" y="213" width="26.8" height="15.0" fill="rgb(206,21,5)" rx="2" ry="2" />
+<text  x="1139.06" y="223.5" >v..</text>
+</g>
+<g >
+<title>InterAtomList::exchangeInter(comm::Domain*)&lt;000000000045a9ce&gt; (60 samples, 0.03%)</title><rect x="117.8" y="245" width="0.4" height="15.0" fill="rgb(232,21,23)" rx="2" ry="2" />
+<text  x="120.84" y="255.5" ></text>
+</g>
+<g >
+<title>PMPI_Probe (80 samples, 0.04%)</title><rect x="11.6" y="213" width="0.5" height="15.0" fill="rgb(215,194,4)" rx="2" ry="2" />
+<text  x="14.57" y="223.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_hash_code(long const&amp;) const (79 samples, 0.04%)</title><rect x="988.7" y="181" width="0.4" height="15.0" fill="rgb(249,78,54)" rx="2" ry="2" />
+<text  x="991.66" y="191.5" ></text>
+</g>
+<g >
+<title>std::__detail::_Hash_code_base&lt;long, std::pair&lt;long const, AtomElement*&gt;, std::__detail::_Select1st, std::hash&lt;long&gt;, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, false&gt;::_M_h2() const (309 samples, 0.16%)</title><rect x="197.2" y="101" width="1.8" height="15.0" fill="rgb(231,114,47)" rx="2" ry="2" />
+<text  x="200.16" y="111.5" ></text>
+</g>
+<g >
+<title>std::equal_to&lt;long&gt;::operator()(long const&amp;, long const&amp;) const (387 samples, 0.20%)</title><rect x="997.1" y="149" width="2.3" height="15.0" fill="rgb(231,66,13)" rx="2" ry="2" />
+<text  x="1000.07" y="159.5" ></text>
+</g>
+<g >
+<title>std::allocator_traits&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::allocate(std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;&amp;, unsigned long) (14,124 samples, 7.26%)</title><rect x="297.6" y="133" width="85.7" height="15.0" fill="rgb(220,131,38)" rx="2" ry="2" />
+<text  x="300.59" y="143.5" >std::alloc..</text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;long*, std::vector&lt;long, std::allocator&lt;long&gt; &gt; &gt;::__normal_iterator(long* const&amp;) (33 samples, 0.02%)</title><rect x="794.1" y="197" width="0.2" height="15.0" fill="rgb(248,142,45)" rx="2" ry="2" />
+<text  x="797.06" y="207.5" ></text>
+</g>
+<g >
+<title>std::allocator_traits&lt;std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt; &gt;::deallocate(std::allocator&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt; &gt;&amp;, std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*, unsigned long) (5,834 samples, 3.00%)</title><rect x="484.7" y="149" width="35.4" height="15.0" fill="rgb(215,15,7)" rx="2" ry="2" />
+<text  x="487.72" y="159.5" >st..</text>
+</g>
+<g >
+<title>MPIDI_CH3U_Buffer_copy&lt;0000000000114940&gt; (62 samples, 0.03%)</title><rect x="115.2" y="165" width="0.4" height="15.0" fill="rgb(224,111,29)" rx="2" ry="2" />
+<text  x="118.19" y="175.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__aligned_buffer&lt;std::pair&lt;long const, AtomElement*&gt; &gt;::_M_ptr() const (273 samples, 0.14%)</title><rect x="768.3" y="117" width="1.7" height="15.0" fill="rgb(222,64,8)" rx="2" ry="2" />
+<text  x="771.35" y="127.5" ></text>
+</g>
+<g >
+<title>MPID_Segment_manipulate&lt;000000000017d5f0&gt; (58 samples, 0.03%)</title><rect x="115.7" y="117" width="0.4" height="15.0" fill="rgb(236,223,21)" rx="2" ry="2" />
+<text  x="118.73" y="127.5" ></text>
+</g>
+<g >
+<title>ArrayMap&lt;unsigned short, OneWayEam&gt;::get(unsigned short) (677 samples, 0.35%)</title><rect x="1125.6" y="181" width="4.1" height="15.0" fill="rgb(235,65,44)" rx="2" ry="2" />
+<text  x="1128.59" y="191.5" ></text>
+</g>
+<g >
+<title>_init&lt;000000000003c0b8&gt; (90 samples, 0.05%)</title><rect x="1159.1" y="149" width="0.5" height="15.0" fill="rgb(219,62,24)" rx="2" ry="2" />
+<text  x="1162.07" y="159.5" ></text>
+</g>
+<g >
+<title>MPID_nem_lmt_shm_start_recv&lt;000000000016d060&gt; (24 samples, 0.01%)</title><rect x="115.6" y="149" width="0.1" height="15.0" fill="rgb(222,120,17)" rx="2" ry="2" />
+<text  x="118.56" y="159.5" ></text>
+</g>
+<g >
+<title>std::pointer_traits&lt;std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;*&gt;::pointer_to(std::__detail::_Hash_node&lt;std::pair&lt;long const, AtomElement*&gt;, false&gt;&amp;) (433 samples, 0.22%)</title><rect x="520.1" y="149" width="2.6" height="15.0" fill="rgb(209,92,27)" rx="2" ry="2" />
+<text  x="523.12" y="159.5" ></text>
+</g>
+</g>
+</svg>
