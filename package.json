@@ -9,12 +9,12 @@
     "deploy": "docusaurus deploy"
   },
   "dependencies": {
-    "@docusaurus/core": "^2.0.0-alpha.16",
-    "@docusaurus/plugin-content-blog": "^2.0.0-alpha.16",
-    "@docusaurus/plugin-content-docs": "^2.0.0-alpha.16",
-    "@docusaurus/plugin-content-pages": "^2.0.0-alpha.16",
-    "@docusaurus/plugin-sitemap": "^2.0.0-alpha.16",
-    "@docusaurus/theme-classic": "2.0.0-alpha.16",
+    "@docusaurus/core": "^2.0.0-alpha.18",
+    "@docusaurus/plugin-content-blog": "^2.0.0-alpha.18",
+    "@docusaurus/plugin-content-docs": "^2.0.0-alpha.18",
+    "@docusaurus/plugin-content-pages": "^2.0.0-alpha.18",
+    "@docusaurus/plugin-sitemap": "^2.0.0-alpha.18",
+    "@docusaurus/theme-classic": "2.0.0-alpha.18",
     "classnames": "^2.2.6",
     "react": "^16.8.4",
     "react-dom": "^16.8.4"

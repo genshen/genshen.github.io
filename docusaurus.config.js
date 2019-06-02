@@ -8,27 +8,64 @@
 module.exports = {
   title: 'Blog',
   tagline: '⚡️ Painless static site generator',
-  organizationName: 'facebook',
-  projectName: 'docusaurus',
+  organizationName: 'gensh.me',
+  projectName: 'blog',
   baseUrl: '/',
-  url: 'https://docusaurus-2.netlify.com',
-  headerIcon: 'img/docusaurus.svg',
+  url: 'https://gensh.me',
   favicon: 'img/docusaurus.ico',
   themeConfig: {
-  //   algolia: {
-  //     apiKey: '47ecd3b21be71c5822571b9f59e52544',
-  //     indexName: 'docusaurus-2',
-  //     algoliaOptions: {},
-  //   },
-    headerLinks: [
-      // {url: 'docs/introduction', label: 'Docs'},
-      {url: '/', label: 'Blog'},
-      {url: 'about/', label: 'About'},
-    ],
+    navbar: {
+      title: 'Blog',
+      logo: {
+        alt: 'Blog Logo',
+        src: 'img/docusaurus.svg',
+      },
+      links: [
+        {to: '/', label: 'Blog', position: 'left'},
+        {to: 'about', label: 'About', position: 'left'},
+        {
+          href: 'https://github.com/facebook/docusaurus',
+          label: 'GitHub',
+          position: 'right',
+        },
+      ],
+    },
     footer: {
       style: 'dark',
-      copyright: `Copyright © ${new Date().getFullYear()} gensh.me.`,
-    }
+      links: [
+        // {
+        //   title: 'Docs',
+        //   items: [
+        //     {
+        //       label: 'Introduction',
+        //       to: 'docs/introduction',
+        //     },
+        //     {
+        //       label: 'Themes',
+        //       to: 'docs/themes',
+        //     },
+        //   ],
+        // },
+        {
+          title: 'Social',
+          items: [
+            {
+              label: 'Blog',
+              to: '/',
+            },
+            {
+              label: 'GitHub',
+              href: 'https://github.com/genshen',
+            }
+          ],
+        },
+      ],
+      logo: {
+        alt: 'Facebook Open Source Logo',
+        src: 'https://docusaurus.io/img/oss_logo.png',
+      },
+      copyright: `Copyright © ${new Date().getFullYear()} gensh.me`,
+    },
   },
   presets: [
     [
