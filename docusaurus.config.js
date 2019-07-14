@@ -7,24 +7,25 @@
 
 module.exports = {
   title: 'Blog',
-  tagline: '⚡️ Painless static site generator',
-  organizationName: 'gensh.me',
-  projectName: 'blog',
-  baseUrl: '/',
+  tagline: 'The tagline of my blog site',
   url: 'https://gensh.me',
-  favicon: 'img/docusaurus.ico',
+  baseUrl: '/',
+  favicon: 'img/favicon.ico',
+  organizationName: 'genshen', // Usually your GitHub org/user name.
+  projectName: 'blog', // Usually your repo name.
   themeConfig: {
     navbar: {
       title: 'Blog',
       logo: {
         alt: 'Blog Logo',
-        src: 'img/docusaurus.svg',
+        src: 'img/logo.svg',
       },
       links: [
+        // {to: 'docs/doc1', label: 'Docs', position: 'left'},
         {to: '/', label: 'Blog', position: 'left'},
         {to: 'about', label: 'About', position: 'left'},
         {
-          href: 'https://github.com/facebook/docusaurus',
+          href: 'https://github.com/genshen',
           label: 'GitHub',
           position: 'right',
         },
@@ -37,12 +38,8 @@ module.exports = {
         //   title: 'Docs',
         //   items: [
         //     {
-        //       label: 'Introduction',
-        //       to: 'docs/introduction',
-        //     },
-        //     {
-        //       label: 'Themes',
-        //       to: 'docs/themes',
+        //       label: 'Docs',
+        //       to: 'docs/doc1',
         //     },
         //   ],
         // },
@@ -69,6 +66,7 @@ module.exports = {
   },
   presets: [
     [
+      // '@docusaurus/preset-classic',
       require.resolve('./preset/index.js'), // preset set to be: './preset'
       {
         // docs: {
@@ -79,6 +77,9 @@ module.exports = {
           path: 'blog',
           routeBasePath: '/',
           postsPerPage: 3,
+        },
+        theme: {
+          customCss: require.resolve('./src/css/custom.css'),
         },
       },
     ],
