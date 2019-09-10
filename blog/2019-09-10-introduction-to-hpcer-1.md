@@ -65,6 +65,8 @@ E级超基本计算机已经称为各超算大国的下一个角逐点。
 > 美国能源部表示，“极光”将建在能源部下属的阿尔贡国家实验室内，目标是促进科学创新、引领新的技术能力，进一步提升美国在全球的科学领导地位。  
 > 引用新闻链接:[美国能源部网站](https://www.energy.gov/articles/us-department-energy-and-intel-build-first-exascale-supercomputer)。
 
+![](/img/blog/intro-hpc-1/aurora-system.png)
+
 例如美国正在建造[aurora](https://aurora.alcf.anl.gov)，由Intel和Cray打造，预计2021年交付，将安装在阿贡实验室。
 AMD也宣布联合Cray公司打造1.5Eflops计算能力的超级计算机**Frontier**，预计2021年交付给橡树岭国家实验室。  
 另外，美国Cray公司也宣布(2019年8月)获得美国能源部、国家核安全管理局价值6亿美元的新订单，将建造一台性能高达150亿亿次（1.5 exaflops）的超算 **El Capitan**，预计2022年底正式交付，主要用于核武器研究。  
