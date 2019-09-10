@@ -1,6 +1,10 @@
 ---
 title: Introduction to Perftools
 author: genshen
+# authorTitle: Front End Engineer @ Facebook
+authorURL: https://github.com/genshen
+authorImageURL: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
+tags: [performance, linux]
 ---
 
 [Perftools](https://github.com/gperftools/gperftools)是Google推出的一款CPU Profile及内存、堆栈分析工具。
