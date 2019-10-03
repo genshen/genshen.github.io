@@ -1,6 +1,6 @@
 {
   "name": "my-blog",
-  "version": "2.0.0-alpha.21",
+  "version": "2.0.0-alpha.25",
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
@@ -10,11 +10,11 @@
     "deploy": "docusaurus deploy"
   },
   "dependencies": {
-    "@docusaurus/core": "^2.0.0-alpha.21",
-    "@docusaurus/plugin-content-blog": "^2.0.0-alpha.21",
-    "@docusaurus/plugin-content-pages": "^2.0.0-alpha.21",
-    "@docusaurus/plugin-sitemap": "^2.0.0-alpha.21",
-    "@docusaurus/theme-classic": "^2.0.0-alpha.21",
+    "@docusaurus/core": "^2.0.0-alpha.25",
+    "@docusaurus/plugin-content-blog": "^2.0.0-alpha.15",
+    "@docusaurus/plugin-content-pages": "^2.0.0-alpha.25",
+    "@docusaurus/plugin-sitemap": "^2.0.0-alpha.25",
+    "@docusaurus/theme-classic": "^2.0.0-alpha.25",
     "classnames": "^2.2.6",
     "react": "^16.8.4",
     "react-dom": "^16.8.4"
