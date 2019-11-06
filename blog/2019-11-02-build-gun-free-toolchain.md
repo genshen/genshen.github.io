@@ -83,7 +83,7 @@ cd ../
 ## 构建 libcxxabi
 这里需要使用 LLVM unwinder。
 ```bash
-cd libc++abi
+cd libcxxabi
 cmake -B./build -H./ -DLIBCXXABI_ENABLE_STATIC=ON -DLIBCXXABI_USE_LLVM_UNWINDER=ON \
     -DLIBCXXABI_LIBUNWIND_PATH=../libunwind \
     -DLIBCXXABI_LIBCXX_INCLUDES=../libcxx/include -DLLVM_PATH=../llvm
@@ -245,6 +245,15 @@ ldd /usr/local/clang/9.0.0/bin/clang
 	libc++.so.1 => /usr/local/lib/libc++.so.1 (0x7f06f2e55000)
 	libc++abi.so.1 => /usr/local/lib/libc++abi.so.1 (0x7f06f2df6000)
 	libc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f06f8cf3000)
+```
+
+这里，默认编译llvm/clang等使用的是静态链接库，可能会导致生成的二进制文件和库文件很大，
+如果对文件体积有要求，如docker镜像中，可以在编译clang是通过`-DBUILD_SHARED_LIBS=ON`来开启使用动态库，而非静态库。  
+在我的测试中，使用动态库编译对整个 clang 安装目录体积为 215.5M，而静态库则为 1.5G 的占用空间，高达7倍之多。 
+在构建对应的docker镜像中，对体积的影响也是类似的：
+```bash
+genshen/clang-toolchain                    9.0.0-shared              73f2318979e5        45 minutes ago      258MB
+genshen/clang-toolchain                    9.0.0-static              86533153c8b1        12 hours ago        1.6GB
 ```
 
 PS: 最后，也还可以可择地，用这个新的clang编译器将libunwind、libcxxabi、libcxx、compiler-rt、clang等重新编译一遍。
