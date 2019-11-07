@@ -23,6 +23,7 @@ module.exports = {
       links: [
         // {to: 'docs/doc1', label: 'Docs', position: 'left'},
         {to: '/', label: 'Blog', position: 'left'},
+        {to: '/tags', label: 'Tags', position: 'left'},
         {to: 'about', label: 'About', position: 'left'},
         {
           href: 'https://github.com/genshen',
