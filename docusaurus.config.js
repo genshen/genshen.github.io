@@ -1,10 +1,3 @@
-/**
- * Copyright (c) 2017-present, Facebook, Inc.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
-
 module.exports = {
   title: 'Blog',
   tagline: 'The tagline of my blog site',
@@ -39,8 +32,25 @@ module.exports = {
         //   title: 'Docs',
         //   items: [
         //     {
-        //       label: 'Docs',
+        //       label: 'Style Guide',
         //       to: 'docs/doc1',
+        //     },
+        //     {
+        //       label: 'Second Doc',
+        //       to: 'docs/doc2',
+        //     },
+        //   ],
+        // },
+        // {
+        //   title: 'Community',
+        //   items: [
+        //     {
+        //       label: 'Stack Overflow',
+        //       href: 'https://stackoverflow.com/questions/tagged/docusaurus',
+        //     },
+        //     {
+        //       label: 'Discord',
+        //       href: 'https://discordapp.com/invite/docusaurus',
         //     },
         //   ],
         // },
@@ -58,10 +68,6 @@ module.exports = {
           ],
         },
       ],
-      logo: {
-        alt: 'Facebook Open Source Logo',
-        src: 'https://docusaurus.io/img/oss_logo.png',
-      },
       copyright: `Copyright © ${new Date().getFullYear()} gensh.me`,
     },
   },
@@ -73,9 +79,11 @@ module.exports = {
         // docs: {
         //   path: 'docs',
         //   sidebarPath: require.resolve('./sidebars.js'),
+        //   editUrl:
+        //     'https://github.com/facebook/docusaurus/edit/master/website/',
         // },
         blog: {
-          path: 'blog',
+          path: './blog',
           routeBasePath: '/',
           postsPerPage: 3,
         },
