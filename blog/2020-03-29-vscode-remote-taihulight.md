@@ -27,6 +27,8 @@ tags: [tool, vscode, supercomputer, hpc]
 另外，官方也有[相关说明](https://code.visualstudio.com/docs/remote/linux#_tips-by-linux-distribution)，
 要求 RedHat Enterprise Linux 6 (64-bit) 版本需要 glibc >= 2.17 与 libstdc++ >= 3.4.18。
 
+<!--truncate-->
+
 为解决 libc 和 libstdc++ 版本问题，可以使用 patchelf 来更改 node 的链接库版本：
 ```bash
 # on spn
@@ -101,3 +103,9 @@ MPI 编译器使用的为 `/usr/sw-mpp/mpi2/mpiswgcc/bin` 下的 mpiswgcc/mpiswg
     "version": 4
 }
 ```
+
+## 来一些效果图
+- Go to definition
+  ![Go to definition](/img/blog/taihulight-ssh-remote/screenshot-go-to-definition.png)
+- Auto completion
+  ![Auto completion](/img/blog/taihulight-ssh-remote/screenshot-auto-completion.png)
