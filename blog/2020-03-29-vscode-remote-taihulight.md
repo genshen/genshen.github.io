@@ -64,13 +64,15 @@ ldd node
     ![](/img/blog/taihulight-ssh-remote/error-cpp-extension.png)  
     具体原因如下：
     ```log
-    /home/export/base/{my_username}/.vscode-server/extensions/ms-vscode.cpptools-0.26.3/bin/Microsoft.VSCode.CPP.Extension.linux: /lib64/libc.so.6: version `GLIBC_2.14' not found (required by /home/export/base/{my_username}/.vscode-server/extensions/ms-vscode.cpptools-0.26.3/bin/Microsoft.VSCode.CPP.Extension.linux)
-    [Error - 18:42:39] Connection to server got closed. Server will not be restarted.
+    [Error - 13:42:50] Connection to server got closed. Server will not be restarted.
+    /home/export/base/{my_username}/.vscode-server/extensions/ms-vscode.cpptools-0.27.0/bin/cpptools: /lib64/libc.so.6: version `GLIBC_2.17' not found (required by /home/export/base/{my_username}/.vscode-server/extensions/ms-vscode.cpptools-0.27.0/bin/cpptools)
+    /home/export/base/{my_username}/.vscode-server/extensions/ms-vscode.cpptools-0.27.0/bin/cpptools: /lib64/libc.so.6: version `GLIBC_2.14' not found (required by /home/export/base/{my_username}/.vscode-server/extensions/ms-vscode.cpptools-0.27.0/bin/cpptools)
     ```
     这里还是 glibc 的问题，我们参照 remote-ssh 安装过程中类似的方式，使用 patchelf 工具来进行patch。
-    需要修改链接库的文件包括：
-    - `~/.vscode-server/extensions/ms-vscode.cpptools-0.26.3/bin` 下的几个可执行文件：`Microsoft.VSCode.CPP.Extension.linux` 和 `Microsoft.VSCode.CPP.IntelliSense.Msvc.linux`; 
-    - `~/.vscode-server/extensions/ms-vscode.cpptools-0.26.3/LLVM/bin` 下的 `clang-format` 文件。
+    需要修改链接库的文件包括 (version 0.27.0)：
+    不过，需要注意的是，在 0.27.0 及其以后的版本中，上面的 patchelf 对对象有所区别，分别为：
+    - `.vscode-server/extensions/ms-vscode.cpptools-0.27.0/bin` 下的 `cpptools` 与 `cpptools-srv`文件;
+    - `.vscode-server/extensions/ms-vscode.cpptools-0.27.0//LLVM/bin` 下的 `clang-format` 的文件
 
 ## 配置 C/C++ 扩展
 目前使用的是 `/usr/sw-mpp/swcc/swgcc530-tools` 下的 sw5gcc/sw5g++ 编译器, 
