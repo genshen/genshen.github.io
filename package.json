@@ -16,6 +16,8 @@
     "@docusaurus/plugin-sitemap": "^2.0.0-alpha.54",
     "@docusaurus/theme-classic": "^2.0.0-alpha.54",
     "classnames": "^2.2.6",
+    "remark-math": "^2.0.1",
+    "rehype-katex": "^3.0.0",
     "react": "^16.8.4",
     "react-dom": "^16.8.4"
   },

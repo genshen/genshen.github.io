@@ -1,3 +1,6 @@
+const math = require('remark-math')
+const katex = require('rehype-katex')
+
 module.exports = {
   title: 'Blog',
   tagline: 'The tagline of my blog site',
@@ -6,6 +9,9 @@ module.exports = {
   favicon: 'img/favicon.ico',
   organizationName: 'genshen', // Usually your GitHub org/user name.
   projectName: 'blog', // Usually your repo name.
+  stylesheets: [
+    'https://cdn.jsdelivr.net/npm/katex@0.11.0/dist/katex.min.css',
+  ],
   themeConfig: {
     navbar: {
       title: 'Blog',
@@ -86,6 +92,9 @@ module.exports = {
           path: './blog',
           routeBasePath: '/',
           postsPerPage: 3,
+          // https://spectrum.chat/unified/remark/remark-math-on-docusaurus-v2~220079aa-2dab-4d2e-b39a-a33563107dc5
+          remarkPlugins: [math],
+          rehypePlugins: [katex],
         },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
