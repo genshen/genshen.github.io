@@ -11,7 +11,7 @@ tags: [hpc]
 这里解释一下，实际上，由于超算系统的限制，很少能够可以连接互联网，而且远程连接网络性能也可能不好；
 还有就是，游戏的程序并没有做**大规模并行化**(实际上也没必要)，顶多只能单节点多核运行(可能还没GPU)，所以打游戏的计算性能和单个普通服务器的性能差不多。对于超算来说，其强势主要在于计算能力（而且为了保证你的程序可以利用上超算的计算资源，需要针对超算环境去编写/改写并行程序，这个我们后面讨论并行编程的时候会讲）。
 
-在高性能计算领域，有一个榜单 [top500](top500.org)，该榜单每半年（6月份和11月份）公布一次世界上计算能力前500的超级计算机，其中6月份是在ISC（the International Supercomputing Conference）大会上公布，11月份是在SC（SuperComputing Conference）大会上公布。
+在高性能计算领域，有一个榜单 [top500](https://top500.org)，该榜单每半年（6月份和11月份）公布一次世界上计算能力前500的超级计算机，其中6月份是在ISC（the International Supercomputing Conference）大会上公布，11月份是在SC（SuperComputing Conference）大会上公布。
 该榜单最早由[Hans Meuer](https://www.top500.org/project/authors/hans-werner-meuer/)、[Erich Strohmaier](https://www.top500.org/project/authors/erich-strohmaier/)与[Jack Dongarra](https://www.top500.org/project/authors/jack-dongarra/)于1993年发起。
 
 ## 超算中的基本概念
