@@ -1,4 +1,4 @@
-image: alpine:latest
+image: alpine:3.12.0
 
 stages:
   - build
@@ -6,7 +6,7 @@ stages:
 
 ## all branchs can build html
 build:
-  image: node:10.14.1-alpine
+  image: node:12.18.3-alpine
   tags: [pages]
   stage: build
   before_script:
