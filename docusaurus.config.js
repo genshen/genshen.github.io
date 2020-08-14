@@ -6,11 +6,12 @@ module.exports = {
   tagline: 'The tagline of my blog site',
   url: 'https://gensh.me',
   baseUrl: '/',
+  onBrokenLinks: 'throw',
   favicon: 'img/favicon.ico',
   organizationName: 'genshen', // Usually your GitHub org/user name.
   projectName: 'blog', // Usually your repo name.
   stylesheets: [
-    'https://cdn.jsdelivr.net/npm/katex@0.11.0/dist/katex.min.css',
+    'https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css',
   ],
   themeConfig: {
     prism: {
@@ -22,7 +23,7 @@ module.exports = {
         alt: 'Blog Logo',
         src: 'img/logo.svg',
       },
-      links: [
+      items: [
         // {to: 'docs/doc1', label: 'Docs', position: 'left'},
         {to: '/', label: 'Blog', position: 'left'},
         {to: '/tags', label: 'Tags', position: 'left'},
@@ -82,8 +83,7 @@ module.exports = {
   },
   presets: [
     [
-      // '@docusaurus/preset-classic',
-      require.resolve('./preset/index.js'), // preset set to be: './preset'
+      '@docusaurus/preset-classic',
       {
         // docs: {
         //   path: 'docs',
@@ -95,9 +95,14 @@ module.exports = {
           path: './blog',
           routeBasePath: '/',
           postsPerPage: 3,
+          blogDescription: 'A docusaurus powered blog!',
           // https://spectrum.chat/unified/remark/remark-math-on-docusaurus-v2~220079aa-2dab-4d2e-b39a-a33563107dc5
           remarkPlugins: [math],
           rehypePlugins: [katex],
+          feedOptions: {
+            type: 'all',
+            copyright: `Copyright © ${new Date().getFullYear()} gensh.me.`,
+          },
         },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
