@@ -13,6 +13,9 @@ module.exports = {
     'https://cdn.jsdelivr.net/npm/katex@0.11.0/dist/katex.min.css',
   ],
   themeConfig: {
+    prism: {
+      additionalLanguages: ['rust'],
+    },
     navbar: {
       title: 'Blog',
       logo: {
