@@ -8,8 +8,15 @@ authorImageURL: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
 tags: [tool, vscode, supercomputer, hpc]
 ---
 
+vs code 可谓是开发利器，其中的 vscode-remote 插件给开发者提供了在远程机器上(包括 ssh、docker、WSL)进行开发的选择，且十分便利。
+再次之前，我们在太湖之光上编写代码很多时候都是ssh登录到机器到登录节点，然后在命令行下使用 vi 编辑器进行代码编写。
+这样的开发方式固然可行，但很多 vscode 的先进功能都没有用上，如代码补全、智能提示、git集成、插件系统。
+
+本文希望将 vscode 的功能给带到太湖之光上，以方便在该机器上的代码开发；通过 vscode 的强大功能来提升工作效率。
+
 ## 在太湖之光上 psn 节点安装 remote-ssh 扩展
 本地安装好 Remote-SSH 扩展后，使用该扩展连接 psn 节点，即会开始下载 vscode-serve (由于远程无法连接互联网，会本地下载然后上传到远程)。  
+如果本地下载上传还是失败，可以参照[该链接](https://stackoverflow.com/a/57601121/10068476) 手动下载并安装 vscode-serve。  
 随后的尝试连接 remote 过程会出现失败（可以在 OUTPUT 中查看具体错误信息）：
 ```log
 /home/export/base/{my_username}/.vscode-server/bin/{id}/node: /usr/lib64/libstdc++.so.6: version `GLIBCXX_3.4.14' not found (required by /home/export/base/{my_username}/.vscode-server/bin/{id}/node)
