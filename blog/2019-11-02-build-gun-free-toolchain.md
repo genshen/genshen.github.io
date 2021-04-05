@@ -1,10 +1,11 @@
 ---
+id: build-gnu-free-toolchain
 title: Build GNU-free Toolchain
 author: genshen
-# authorTitle: Front End Engineer @ Facebook
-authorURL: https://github.com/genshen
-authorImageURL: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
-tags: [toolchain, llvm, linux]
+# author_title: Front End Engineer @ Facebook
+author_url: https://github.com/genshen
+author_image_url: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
+tags: [toolchain, compiler, llvm, linux]
 ---
 
 在linux上，最为受欢迎的 C/CXX 编译器之一就是 gcc 系列了，其使用 GNU 协议开源。
@@ -223,7 +224,7 @@ export CC=/usr/local/clang-gnu/9.0.0/bin/clang
 export CXX=/usr/local/clang-gnu/9.0.0/bin/clang++
 rm -rf ./llvm-build-with-compiler-rt # clean last build
 # 除安装路径外，cmake 命令选项同上(用gcc编译clang的cmake命令)
-cmake -B./llvm-build-with-compiler-rt -H./llvm -DCMAKE_BUILD_TYPE=Release \
+cmake -B./llvm-build-with-compiler-rt -H./llvm -DCMAKE_BUILD_TYPE=MinSizeRel \
     -DCMAKE_INSTALL_PREFIX=/usr/local/clang/9.0.0 \
     -DLLVM_ENABLE_PROJECTS="clang;compiler-rt" \
 	-DCOMPILER_RT_BUILD_SANITIZERS=OFF \
@@ -248,7 +249,7 @@ ldd /usr/local/clang/9.0.0/bin/clang
 ```
 
 这里，默认编译llvm/clang等使用的是静态链接库，可能会导致生成的二进制文件和库文件很大，
-如果对文件体积有要求，如docker镜像中，可以在编译clang是通过`-DBUILD_SHARED_LIBS=ON`来开启使用动态库，而非静态库。  
+如果对文件体积有要求，如docker镜像中，可以在编译clang时通过`-DLLVM_LINK_LLVM_DYLIB=ON`来开启使用动态库，而非静态库。  
 在我的测试中，使用动态库编译对整个 clang 安装目录体积为 215.5M，而静态库则为 1.5G 的占用空间，高达7倍之多。 
 在构建对应的docker镜像中，对体积的影响也是类似的：
 ```bash

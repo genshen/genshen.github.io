@@ -4,7 +4,7 @@ author: genshen
 # authorTitle: Front End Engineer @ Facebook
 authorURL: https://github.com/genshen
 authorImageURL: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
-tags: [toolchain, gcc, windows, mingw]
+tags: [toolchain, compiler, gcc, windows, mingw]
 ---
 
 In this blog, we will show the steps of building Mingw-w64 on macOS system.

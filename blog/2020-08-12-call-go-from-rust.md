@@ -134,7 +134,7 @@ include!(concat!(env!("OUT_DIR"), "/api_bindings.rs"));
 
 至此，我们将 step1 的 go build 步骤和第二步的步骤都放到了 build.rs 文件中，实现的代码生成的自动化，且能够依据文件变化自动更新。
 
-## One moew thing
+## One more thing
 我们在 Go 代码中，可能会调用一些 C 的函数，如 `C.free` 函数 (即 C 的 free 函数)，需要引入一些头文件，如 `stdlib,h`：
 ```go title="api.go" {4}
 package main
