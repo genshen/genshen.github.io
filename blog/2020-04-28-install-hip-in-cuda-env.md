@@ -1,5 +1,5 @@
 ---
-id: install-hip-in-CUDA-env
+slug: install-hip-in-CUDA-env
 title: 在 CUDA 环境下安装 HIP
 author: genshen
 # authorTitle: Front End Engineer @ Facebook

@@ -1,5 +1,5 @@
 ---
-id: call-go-from-rust
+slug: call-go-from-rust
 title: Rust 调用 Go 代码
 author: genshen
 # authorTitle: Front End Engineer @ Facebook

@@ -1,5 +1,5 @@
 ---
-id: vs-code-remote-on-sunway-taihulight
+slug: vs-code-remote-on-sunway-taihulight
 title: 在神威太湖之光上使用 vscode Remote
 author: genshen
 # authorTitle: Front End Engineer @ Facebook

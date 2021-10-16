@@ -1,5 +1,5 @@
 ---
-id: build-gnu-free-toolchain
+slug: build-gnu-free-toolchain
 title: Build GNU-free Toolchain
 author: genshen
 # author_title: Front End Engineer @ Facebook
