@@ -91,6 +91,7 @@ module.exports = {
         //   editUrl:
         //     'https://github.com/facebook/docusaurus/edit/master/website/',
         // },
+        docs: false,
         blog: {
           path: './blog',
           routeBasePath: '/',
