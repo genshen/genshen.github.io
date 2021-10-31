@@ -22,8 +22,8 @@ basictex 是一个极简的 latex 版本，仅安装最基础的组件，不像 
 这样的好处是，随后用 tlmgr 工具安装各种包的时候，也不需要 sudo 权限了。  
 例如，可放到 `~/.local/texlive` 下：
 ```bash
-mkdir -p ~/.local/texlive
-cd ~/.local/texlive
+mkdir -p ~/.local/develop/texlive
+cd ~/.local/develop/texlive
 mkdir -p texlive etc.paths.d etc.manpaths.d library
 
 cd /usr/local/
