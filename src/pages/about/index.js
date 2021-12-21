@@ -1,8 +1,6 @@
 /**
- * Copyright (c) 2017-present, Facebook, Inc.
+ * Copyright (c) 2018-present, genshen.
  *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
  */
 
 import React, {useEffect} from 'react';
@@ -12,7 +10,11 @@ function About() {
 
   return (
     <Layout>
-      <div className="container margin-vert--xl" >About Page</div>
+      <h1 className="container margin-vert--xl">About Page</h1>
+      <div className="container">
+        <a href="https://github.com/genshen" target="_blank"> Follow me on Github</a>
+        <p>A Student in Computer Science</p>
+      </div>
     </Layout>
   );
 }
