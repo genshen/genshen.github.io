@@ -38,3 +38,7 @@ tags: [LaTeX]
 \end{enumerate}
 \end{document}
 ```
+
+## 更新（2022/3/25）
+可以用 `tlmgr list --only-installed` 命令列出包。
+见 https://tex.stackexchange.com/a/56012。

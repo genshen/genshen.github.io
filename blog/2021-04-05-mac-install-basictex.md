@@ -12,7 +12,7 @@ basictex 是一个极简的 latex 版本，仅安装最基础的组件，不像 
 
 ## 安装目录
 和 textlive 一样，basictex 的安装包会将其自身会安装到系统目录，包括：
-- /usr/local/texlive/2021basic
+- /usr/local/texlive/2022basic
 - /etc/paths.d/TeX
 - /etc/manpaths.d/TeX
 - /Library/TeX
@@ -29,7 +29,7 @@ mkdir -p texlive etc.paths.d etc.manpaths.d library
 cd /usr/local/
 sudo ln -s ~/.local/develop/texlive/texlive ./texlive
 
-cd /etc/etc.paths.d
+cd /etc/paths.d
 sudo ln -s ~/.local/develop/texlive/etc.paths.d TeX
 
 cd /etc/manpaths.d
@@ -45,7 +45,7 @@ sudo ln -s ~/.local/develop/texlive/library/ ./TeX
 brew install basictex
 sudo chown -R genshen: ~/.local/develop/texlive #`genshen` 为普通用户名.
 ```
-如果必要，可将路径 `~/.local/develop/texlive/texlive/2021basic/bin/universal-darwin`加入`PATH`环境变量中。
+如果必要，可将路径 `~/.local/develop/texlive/texlive/2022basic/bin/universal-darwin`加入`PATH`环境变量中。
 
 ## 安装包
 例如 `tlmgr install subfigure`，这里不需要 sudo 权限即可安装。
