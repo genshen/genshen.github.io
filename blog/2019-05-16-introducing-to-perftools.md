@@ -29,14 +29,28 @@ brew install perftools
 
 ### 从源码编译安装:
 ```bash
-./configure --prefix=/usr/local/develop/gperftools/2.7 --disable-dependency-tracking
+./autogen.sh
+./configure --prefix=/usr/local/develop/gperftools/2.10 --disable-dependency-tracking
 make 
 make install
 ```
+
+:::tip
+2022/06 更新，以前的版本（原先的文章里面是2.7 版本）构建命令只支持 autoconf 构建，
+2.8.1 版本开始，支持了 CMake 进行构建。  
+用 CMake 进行构建的命令如下：
+```bash
+# cmake 3.16+
+cmake -B./build -S./ -DINSTALL_PPROF=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local/develop/gperftools/2.10
+cmake --build ./build
+cmake --install ./build
+```
+:::
+
 设置环境变量:
 ```bash
-## gperftool 2.7
-export GPERFTOOL_HOME=/usr/local/develop/gperftools/2.7
+## gperftool 2.10
+export GPERFTOOL_HOME=/usr/local/develop/gperftools/2.10
 export PATH=$GPERFTOOL_HOME/bin:$PATH
 export C_INCLUDE_PATH=$GPERFTOOL_HOME/include:$C_INCLUDE_PATH
 export CPLUS_INCLUDE_PATH=$GPERFTOOL_HOME/include:$CPP_INCLUDE_PATH
@@ -72,7 +86,8 @@ export LD_LIBRARY_PATH=$GRAPHVIZ_HOME/lib:$LD_LIBRARY_PATH
 
 
 ## 使用
-见: https://gperftools.github.io/gperftools/cpuprofile.html。  
+相关的详细使用文档，可以见: https://gperftools.github.io/gperftools/cpuprofile.html。  
+
 
 ## 编译并执行程序
 
@@ -98,7 +113,7 @@ CPUPROFILE=my_exe.prof ./my_exe
 ### 使用`LD_PRELOAD`环境变量
 另一种运行程序的方式是使用`LD_PRELOAD`环境变量。在编译阶段使用`-lprofiler`链接profiler库，而是在运行时使用`LD_PRELOAD`环境变量指定。
 ```bash
-LD_PRELOAD="/usr/local/develop/gperftools/2.7/lib/libprofiler.so" CPUPROFILE=my_exe.prof ./my_exe
+LD_PRELOAD="/usr/local/develop/gperftools/2.10/lib/libprofiler.so" CPUPROFILE=my_exe.prof ./my_exe
 ```
 这种方式对于**MPI**程序十分有用，因为在MPI环境下(多进程同时运行，且profile文件相同)编译时链接profiler库的方式似乎无法正确生成profile文件。而LD_PRELOAD的方式可以为每一个MPI进程生成一个profile文件(my_exe.prof.1 my_exe.prof.2 ...)。
 
