@@ -6,7 +6,7 @@ stages:
 
 ## all branchs can build html
 build:
-  image: node:12.18.3-alpine
+  image: node:16.16.0-alpine
   tags: [pages]
   stage: build
   before_script:
@@ -14,7 +14,7 @@ build:
   script:
     - yarn build
   cache:
-    key: docusaurus-2.0.0-beta-10 # caching by docusaurus version.
+    key: docusaurus-2.0.0-rc1 # caching by docusaurus version.
     paths:
     - node_modules/
   artifacts:
