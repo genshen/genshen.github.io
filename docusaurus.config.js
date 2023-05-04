@@ -53,6 +53,7 @@ const config = {
           //   label: 'Tutorial',
           // },
           {to: '/', label: 'Blog', position: 'left'},
+          {to: '/archive', label: 'Archive', position: 'left'},
           {to: '/tags', label: 'Tags', position: 'left'},
           {to: 'about', label: 'About', position: 'left'},        {
             href: 'https://github.com/genshen',
@@ -107,6 +108,8 @@ const config = {
             // https://spectrum.chat/unified/remark/remark-math-on-docusaurus-v2~220079aa-2dab-4d2e-b39a-a33563107dc5
             remarkPlugins: [math],
             rehypePlugins: [katex],
+            // blogSidebarTitle: 'All posts',
+            blogSidebarCount: 8, // Or "ALL"
             // Please change this to your repo.
             // Remove this to remove the "edit this page" links.
             editUrl:
