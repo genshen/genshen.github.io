@@ -139,7 +139,7 @@ tcp        0      0 127.0.0.1:2222          0.0.0.0:*               LISTEN      
     ```
 2. 执行端口转发命令：
    ```bash
-   ssh -N remote -L 2222:login09:22
+   ssh -o GatewayPorts=true -N remote -L 2222:login09:22
    # 可以再加上 -f 参数，以后台运行。
    ```
 ### 开放端口（管理员）

@@ -19,6 +19,7 @@ tags: [markdown, LaTeX]
 
 ## 为什么不直接用 LaTeX ?
 因为导师看毕业论文需要用 word 格式（无奈）。
+LaTeX 偶尔也还是需要调整格式问题（如图片大小和子图；表格的排版相对 markdown 要麻烦一些。当然 markdown 不支持复杂的表格形式。）。
 <!--truncate-->
 
 所以，得有一种方法，可以解决上述的 word 的缺点，还能导出为满足毕业论文 word 模版格式的 word 文件。
@@ -55,7 +56,7 @@ ls1-mardyn 等软件则采用 cell-list 数据结构，如 [@fig:cell_list] 所�
 
 | | label | ref | example |
 | -- | -- | -- | -- |
-| 图片 | #fig:label | @fig:label | `![a](image1.png){#fig:figureRefA}` |
+| 图片 | #fig:label | @fig:label | `![a](image1.png){#fig:label}` |
 | 公式| #eq:label | @eq:label | `$$ math $$ {#eq:label}`|
 | 表格 | #tbl:label | @tbl:label | `: Caption {#tbl:label}` (见[这里](https://lierdakil.github.io/pandoc-crossref/#table-labels)) |
 | 章节 | #sec:section | @sec:section | `Section {#sec:section}` |
@@ -86,6 +87,23 @@ tblPrefix: 表
 
 更多的配置选项，可以参考 pandoc-crossref 的[文档](https://lierdakil.github.io/pandoc-crossref/#customization)。
 另外，这个 yaml 部分不仅仅针对 pandoc-crossref，pandoc 本身也有一些选项可以通过其指定（如指定关键词）。
+
+#### 子图的排版
+```
+<div id="fig:kmc_cu">
+![step=0](./assets/vincent-06/0.png){#fig:kmc_vincent_06_0 width=25%}
+![step=10000](./assets/vincent-06/1.png){#fig:kmc_vincent_06_1 width=25%}
+![step=50000](./assets/vincent-06/5.png){#fig:kmc_vincent_06_2 width=25%}
+![step=100000](./assets/vincent-06/10.png){#fig:kmc_vincent_06_3 width=25%}
+
+![step=150000](./assets/vincent-06/25.png){#fig:kmc_vincent_06_4 width=25%}
+![step=500000](./assets/vincent-06/50.png){#fig:kmc_vincent_06_5 width=25%}
+![step=100000](./assets/vincent-06/100.png){#fig:kmc_vincent_06_6 width=25%}
+![step=115000](./assets/vincent-06/115.png){#fig:kmc_vincent_06_7 width=25%}
+
+MISA-AKMC 模拟的空位引导的富Cu析出过程可视化
+</div>
+```
 
 ### 参考文献引用
 熟悉 LaTeX 的同学可能都知道，LaTeX 可以通过 .bib 文件和 bibtex 来引用参考文献，十分方便。
