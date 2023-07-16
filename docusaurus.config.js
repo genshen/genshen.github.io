@@ -11,7 +11,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
 const config = {
   title: 'Blog',
   tagline: 'Blog site of gensh.me',
-  url: 'https://gensh.me',
+  url: 'https://blog.gensh.me',
   baseUrl: '/',
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
