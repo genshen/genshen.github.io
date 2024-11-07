@@ -4,7 +4,7 @@ title: 一个用于包装编译器的脚本
 author: genshen
 authorURL: https://github.com/genshen
 authorImageURL: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
-tags: [markdown, LaTeX]
+tags: [compiler, CUDA, Linux]
 ---
 
 有时候，在调用编译器的时候，我们像移除掉编译器的某些参数（例如这些参数是 cmake 等工具生成的，我们由不好修改cmake的内部机制）。
@@ -13,6 +13,8 @@ tags: [markdown, LaTeX]
 这时候，可以考虑用我御用的脚本。
 下面的脚本是一个参考，支持移除编译器参数、修改或者添加编译器参数。
 这里用的编译器是 hipcc（在英伟达平台上，hipcc 会调用 nvcc，然后 nvcc 调用系统的gcc），大家可以在此基础上进行修改。
+
+<!--truncate-->
 
 ```bash
 #!/bin/sh

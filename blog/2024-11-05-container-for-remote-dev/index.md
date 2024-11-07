@@ -4,7 +4,7 @@ title: 配置容器用于远程开发
 author: genshen
 authorURL: https://github.com/genshen
 authorImageURL: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
-tags: [docker, VS-Code]
+tags: [docker, VS-Code, JetBrains]
 ---
 
 相信有很多有远程开发需求的同学，想用本地的IDE，但运行环境在远程。
@@ -21,7 +21,9 @@ tags: [docker, VS-Code]
 ## Step0: 前提条件
 - 远程的Linux 宿主主机需要安装好 dockerd （docker 守护进程）。
 - 远程 Linux 宿主主机支持 ssh 连接，并且有一个可用的用户。
-  
+
+<!--truncate-->
+
 ## Step1: 安装 docker client (Mac)
 docker 分为守护进程和客户端。为了轻量级点，mac 就不安装守护进程了（例如，docker Desktop for Mac 包含守护进程和客户端），只安装客户端就行。 
 
