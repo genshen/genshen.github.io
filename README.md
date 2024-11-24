@@ -39,3 +39,10 @@ $ GIT_USER=<Your GitHub username> yarn deploy
 ```
 
 If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+
+### 添加评论系统
+
+```bash
+yarn swizzle @docusaurus/theme-classic BlogPostPage --eject --typescript
+```
+src: https://www.ga0x.com/blog/2022/07/12/add-comments-to-docusaurus
