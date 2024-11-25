@@ -1,0 +1,10 @@
+genshen:
+  name: genshen
+  title: student in CS
+  url: https://github.com/genshen
+  image_url: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
+  page: true
+    # customize the url of the author page at /blog/authors/<permalink>
+    # permalink: '/all-sebastien-lorber-articles'
+  socials:
+    github: genshen
