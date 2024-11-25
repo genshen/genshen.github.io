@@ -1,9 +1,7 @@
 ---
 slug: markdown-for-phd-thesis
 title: 用 Markdown 写毕业论文
-author: genshen
-authorURL: https://github.com/genshen
-authorImageURL: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
+authors: [genshen]
 tags: [markdown, LaTeX]
 ---
 

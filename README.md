@@ -1,6 +1,6 @@
 # Blog Site
 
-My Blog site is built using [Docusaurus 2](https://docusaurus.io/), a modern static website generator.
+My Blog site is built using [Docusaurus 3](https://docusaurus.io/), a modern static website generator.
 
 ### Installation
 

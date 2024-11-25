@@ -1,10 +1,9 @@
 ---
 slug: script-for-compiler-wrapper
 title: 一个用于包装编译器的脚本
-author: genshen
-authorURL: https://github.com/genshen
-authorImageURL: https://avatars3.githubusercontent.com/u/11265498?s=460&v=4
+authors: [genshen]
 tags: [compiler, CUDA, Linux]
+# image: ./img/social-card.png
 ---
 
 有时候，在调用编译器的时候，我们像移除掉编译器的某些参数（例如这些参数是 cmake 等工具生成的，我们由不好修改cmake的内部机制）。

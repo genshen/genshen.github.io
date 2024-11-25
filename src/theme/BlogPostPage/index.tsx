@@ -2,12 +2,17 @@ import React, {type ReactNode} from 'react';
 import { useEffect, useRef } from 'react';
 import clsx from 'clsx';
 import {HtmlClassNameProvider, ThemeClassNames} from '@docusaurus/theme-common';
-import {BlogPostProvider, useBlogPost} from '@docusaurus/theme-common/internal';
+import {
+  BlogPostProvider,
+  useBlogPost,
+} from '@docusaurus/plugin-content-blog/client';
 import BlogLayout from '@theme/BlogLayout';
 import BlogPostItem from '@theme/BlogPostItem';
 import BlogPostPaginator from '@theme/BlogPostPaginator';
 import BlogPostPageMetadata from '@theme/BlogPostPage/Metadata';
+import BlogPostPageStructuredData from '@theme/BlogPostPage/StructuredData';
 import TOC from '@theme/TOC';
+import ContentVisibility from '@theme/ContentVisibility';
 import type {Props} from '@theme/BlogPostPage';
 import type {BlogSidebar} from '@docusaurus/plugin-content-blog';
 
@@ -53,6 +58,8 @@ function BlogPostPageContent({
           />
         ) : undefined
       }>
+      <ContentVisibility metadata={metadata} />
+
       <BlogPostItem>{children}</BlogPostItem>
 
       {(nextItem || prevItem) && (
@@ -73,6 +80,7 @@ export default function BlogPostPage(props: Props): JSX.Element {
           ThemeClassNames.page.blogPostPage,
         )}>
         <BlogPostPageMetadata />
+        <BlogPostPageStructuredData />
         <BlogPostPageContent sidebar={props.sidebar}>
           <BlogPostContent />
         </BlogPostPageContent>
