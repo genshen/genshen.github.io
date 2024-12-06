@@ -18,6 +18,41 @@ tags: [compiler, CUDA, Linux]
 ```bash
 #!/bin/sh
 
+LINKER="hipcc"
+newcmd="$LINKER"
+flag_xcpp_appear=0
+
+for arg in $@
+do
+  case $arg in
+    "-hc") # 移除参数 `-hc`
+      ;;
+
+    "-fopenmp") # 添加参数 `-Xcompiler`  
+     newcmd="$newcmd -Xcompiler -fopenmp";;
+
+    "-xc++")
+    flag_xcpp_appear=1
+    newcmd="$newcmd $arg"
+      ;;
+
+    *)  
+      newcmd="$newcmd $arg";;
+  esac
+done
+
+
+if [ "$flag_xcpp_appear" -eq 1 ]; then
+  echo "flag `-xc++` appears in this commane."
+fi
+# Finally execute the new command
+exec $newcmd
+```
+
+下面是一个更细的脚本参考，例如可以记录某个选项是否出现过，如果出现过，则将编译器换成g++。  
+```bash
+#!/bin/sh
+
 set -e
 
 LINKER=/usr/local/bin/hipcc
